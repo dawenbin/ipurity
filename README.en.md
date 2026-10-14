@@ -6,13 +6,6 @@
 
 **A web tool that batch-checks residential IPs.**
 
-Paste a whole list at once: masked octets like `198.*.42.81`, ranges like `198.3.242.0/24` and single IPs
-can all be mixed together. It looks at whether each IP sits on a residential broadband line, at a company or
-in a datacenter, then sorts the whole row into tier A / B / C / D by its residential share.
-
-Other IP lookup sites take one address at a time; here the whole list comes back in one go — everything runs
-in your browser, with nothing to install, no account, no API key, and your list is never uploaded.
-
 [![License](https://img.shields.io/badge/license-Apache--2.0-111111)](LICENSE) ![Static](https://img.shields.io/badge/static-no%20backend-111111) ![Tracking](https://img.shields.io/badge/tracking-none-111111) ![UI](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%7C%20English-111111)
 
 **[Live site](https://ipurity.pages.dev)** &nbsp;·&nbsp; **[Scoring rules](docs/judging-criteria.md)** &nbsp;·&nbsp; **[Data pipeline](docs/data-pipeline.md)** &nbsp;·&nbsp; [中文](README.md) · **English**

@@ -6,12 +6,6 @@
 
 **批量甄别住宅 IP 的网页工具。**
 
-一次粘一整张清单：`198.*.42.81` 这种打码写法、`198.3.242.0/24` 这种网段、单个 IP，混在一起也认。
-它逐个看这些 IP 落在住宅宽带、公司还是机房里，再按住宅占比把整行分进 A / B / C / D 四档。
-
-别的查 IP 网站一次只能查一个，这里整张清单一次出结果 —— 全在浏览器里算完，不装软件、不用注册、
-不用 key，粘贴的清单不上传。
-
 [![License](https://img.shields.io/badge/license-Apache--2.0-111111)](LICENSE) ![Static](https://img.shields.io/badge/static-no%20backend-111111) ![Tracking](https://img.shields.io/badge/tracking-none-111111) ![UI](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%7C%20English-111111)
 
 **[在线使用](https://ipurity.pages.dev)** &nbsp;·&nbsp; **[判定口径](docs/judging-criteria.md)** &nbsp;·&nbsp; **[数据流水线](docs/data-pipeline.md)** &nbsp;·&nbsp; **中文** · [English](README.en.md)
