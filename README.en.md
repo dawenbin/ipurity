@@ -90,7 +90,8 @@ If this tool is useful to you, [a ⭐](https://github.com/dawenbin/ipurity) help
 
 ## License
 
-- Code and [docs/](docs/): [Apache-2.0](LICENSE)
-- This README: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)
-- The `iPurity` name and icon (including `favicon.ico`): all rights reserved, not covered by the licences above
-- `data/`: third-party data, licences and attribution in [NOTICE](NOTICE); the measured records come from the ip-api.com free endpoint, non-commercial use only, so replace the source for commercial use
+This project is licensed under [Apache-2.0](LICENSE); the documentation is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+
+The `iPurity` name and icon remain all rights reserved and are not covered by those licences.
+
+Data under `data/` comes from third parties; licences and attribution are listed in [NOTICE](NOTICE) — the measured records come from the ip-api.com free endpoint, non-commercial use only.
