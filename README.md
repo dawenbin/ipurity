@@ -74,4 +74,6 @@ node tools/query.mjs "130.*.253.66" "82.24.73.*"    # 命令行查询
 
 ## 许可
 
-本项目采用 [Apache-2.0](LICENSE) 许可。第三方数据来源与署名见 [NOTICE](NOTICE)；城市数据来自 DB-IP（CC BY 4.0），再分发时请一并保留署名。
+代码和 [docs/](docs/) 采用 [Apache-2.0](LICENSE) 许可；这份 README 采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)，转载、改编都行，保留署名即可。
+
+`data/` 里的数据包来自第三方，各自的许可与署名见 [NOTICE](NOTICE) —— 其中实测记录来自 ip-api.com 免费接口，仅限非商业用途，商用请替换数据源。

@@ -90,4 +90,6 @@ If this tool is useful to you, [a ⭐](https://github.com/dawenbin/ipurity) help
 
 ## License
 
-Licensed under [Apache-2.0](LICENSE). Third-party data sources and attribution are listed in [NOTICE](NOTICE); the city data comes from DB-IP (CC BY 4.0), so keep the attribution when redistributing.
+The code and [docs/](docs/) are licensed under [Apache-2.0](LICENSE); this README is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — repost and adapt it freely, just keep the attribution.
+
+The data packs under `data/` come from third parties; their licences and attribution are listed in [NOTICE](NOTICE) — the measured records come from the ip-api.com free endpoint, which is non-commercial only, so swap the source before using it commercially.
