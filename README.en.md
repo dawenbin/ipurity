@@ -21,6 +21,12 @@ in your browser, with nothing to install, no account, no API key, and your list 
 
 </div>
 
+## When you need it
+
+Subscribing to AI services, running a cross-border e-commerce shop, running TikTok and other social accounts —
+the first thing a risk engine looks at is whether the IP is a residential line or a datacenter. Paste your whole
+candidate list and see which of them are residential.
+
 ## How grading works
 
 The tool only reads IPs: country, city and notes in your list are ignored, and country and city are looked up by
