@@ -16,10 +16,10 @@
 
 ## How grading works
 
-Country, city and notes in your list are not used: those labels are often wrong, and the tool looks both up by
-itself. A row with `*` is expanded into 256 candidate ranges (254 when the `*` is in the 4th octet), each one is
-classified as residential, company or datacenter, and the whole row is then placed in one of four tiers by how
-residential it is:
+The tool only reads IPs. Country, city and notes in your list are ignored: country and city are looked up by
+the tool itself. A row with `*` is expanded into 256 candidate ranges (254 when the `*` is in the 4th octet),
+each one is classified as residential, company or datacenter, and the whole row is then placed in one of four
+tiers by its residential share:
 
 | Tier | Meaning | Residential share of the row |
 | :-- | :-- | :-- |
@@ -28,13 +28,13 @@ residential it is:
 | **C** | mostly business and institutional | 7.8% – 23.3% |
 | **D** | mostly datacenter and institutional | < 7.8% |
 
-Tiers marked `est.` are inferred from the global ASN table. That table cannot see the datacenter ranges rented
-out inside a large carrier, so such a tier is an upper bound and its residential share is capped at 90%. The
+A tier marked `est.` is inferred from the global ASN table, so it is an upper bound only: that table cannot
+see the datacenter ranges rented out inside a large carrier, and the residential share is capped at 90%. The
 full criteria, the calibration, and what online IP lookup sites actually report are in
 [Scoring rules](docs/judging-criteria.md) (Chinese).
 
-If your IPs are all datacenter, or you only want to know which city a single IP sits in, this tool will not
-help you.
+It answers one question: given a list of IP ranges, which ones should you try first. If your IPs are all
+datacenter, or you only want the city a single IP sits in, this tool will not help you.
 
 ## Data sources
 
