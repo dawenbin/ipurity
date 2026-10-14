@@ -74,4 +74,6 @@ node tools/query.mjs "130.*.253.66" "82.24.73.*"    # 命令行查询
 
 ## 许可
 
-本项目采用 [Apache-2.0](LICENSE) 许可。第三方数据来源与署名见 [NOTICE](NOTICE)；城市数据来自 DB-IP（CC BY 4.0），再分发时请一并保留署名。
+代码采用 [Apache-2.0](LICENSE) 许可。`iPurity` 这个名字和图标（含 `favicon.ico`）不随代码授权 —— 拿去改、拿去用都行，换个名字和图标再发布。
+
+第三方数据来源与署名见 [NOTICE](NOTICE)；城市数据来自 DB-IP（CC BY 4.0），再分发时请一并保留署名。
