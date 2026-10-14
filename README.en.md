@@ -14,7 +14,7 @@
 
 </div>
 
-## When you need it
+## Use cases
 
 Subscribing to AI services, running a cross-border e-commerce shop, running TikTok and other social accounts —
 the first thing a risk engine looks at is whether the IP is a residential line or a datacenter. Paste your whole
