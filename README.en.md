@@ -92,4 +92,4 @@ If this tool is useful to you, [a ⭐](https://github.com/dawenbin/ipurity) help
 
 This project is licensed under [Apache-2.0](LICENSE); the documentation is licensed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). The `iPurity` name and icon remain all rights reserved and are not covered by those licences.
 
-Data under `data/` comes from third parties; licences and attribution are listed in [NOTICE](NOTICE) — the measured records come from the ip-api.com free endpoint, non-commercial use only.
+Data comes from third parties; licences and attribution are listed in [NOTICE](NOTICE) — the measured records come from the ip-api.com free endpoint, non-commercial use only.
