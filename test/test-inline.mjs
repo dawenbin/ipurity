@@ -117,7 +117,7 @@ check("枚举明细行数多于排名表", csvCand.split("\n").length > csvLines
   const p = Core.parseInput("82.24.73.*")[0];
   check("第 4 段打码能识别", !!p && p.pattern === "82.24.73.*", p && p.pattern);
 
-  const r = Core.analyze("198.3.242.*", data, {});   // 实测样本里有 198.*.242
+  const r = Core.analyze("198.3.242.*", data, {});   // 实测记录里有 198.*.242
   check("第 4 段打码样本 = 254（跳过 .0/.255）", !!r.ok && r.sampled === 254 && r.hostRange === "1-254",
     r.ok ? `sampled=${r.sampled} hostRange=${r.hostRange}` : r.reason);
   check("建议拿的网络是标准 /24 写法", Core.maskedNetwork("82.24.73.*") === "82.24.73.0/24",
@@ -134,7 +134,7 @@ check("枚举明细行数多于排名表", csvCand.split("\n").length > csvLines
   check("第 2 段打码仍是 256 个 /24", !!r2.ok && r2.sampled === 256 && !r2.hostRange,
     r2.ok ? `sampled=${r2.sampled}` : r2.reason);
 
-  /* 全球段表同样按 1–254 */
+  /* IP 归属表同样按 1–254 */
   const World = require("../assets/sources.js");
   const packUrl = new URL("../data/global-pack.bin", import.meta.url);
   if (existsSync(packUrl)) {
@@ -145,10 +145,10 @@ check("枚举明细行数多于排名表", csvCand.split("\n").length > csvLines
       .match(/window\.ASN_CALIB\s*=\s*([\s\S]*?);?\s*$/);
     if (c) { World.setCalib(JSON.parse(c[1])); }
     const g = Core.analyzeGlobal("82.24.73.*", { world: World });
-    check("全球段表第 4 段打码样本 = 254", !!g.ok && g.sampled === 254 && g.source === "全球ASN",
+    check("IP 归属表第 4 段打码样本 = 254", !!g.ok && g.sampled === 254 && g.source === "全球ASN",
       g.ok ? `sampled=${g.sampled} tier=${g.tier}` : g.reason);
     const g2 = Core.analyzeGlobal("82.*.73.5", { world: World });
-    check("全球段表第 2 段打码样本 = 256", !!g2.ok && g2.sampled === 256,
+    check("IP 归属表第 2 段打码样本 = 256", !!g2.ok && g2.sampled === 256,
       g2.ok ? `sampled=${g2.sampled}` : g2.reason);
   }
 }

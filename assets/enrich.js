@@ -283,7 +283,7 @@
     score = base;
     parts.push({
       k: "离线分级 " + (row ? (row.tier + (row.approx ? "（估算）" : "")) : "?"),
-      v: base, src: row && row.source === "全球ASN" ? "全球段表（ASN 级估算）" : "实测样本（实测）"
+      v: base, src: row && row.source === "全球ASN" ? "IP 归属表（ASN 级估算）" : "实测记录（实测）"
     });
 
     var on = row && row.online;

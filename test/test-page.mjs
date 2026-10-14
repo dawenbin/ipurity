@@ -36,9 +36,9 @@ check("meta[name=build] 存在", !!build, String(build));
 check(`所有本地脚本都带同一个构建戳（${stamps.length} 个）`,
   stamps.length >= 8 && stamps.every((s) => s === build), [...new Set(stamps)].join(", "));
 check("index.html 引用了数据包", assets.includes("data/segments-data.js"), assets.join(", "));
-check("index.html 引用了城市包与全球段表", assets.includes("assets/city.js") && assets.includes("assets/sources.js"), assets.join(", "));
+check("index.html 引用了城市包与IP 归属表", assets.includes("assets/city.js") && assets.includes("assets/sources.js"), assets.join(", "));
 
-// 全球段表 / 城市层的数据文件必须都在（静态托管靠它们兜底）
+// IP 归属表 / 城市层的数据文件必须都在（静态托管靠它们兜底）
 for (const f of ["data/global-pack.bin", "data/global-asn.js", "data/asn-calib.js", "data/city/index.json"]) {
   check(`存在 ${f}`, existsSync(join(root, f)));
 }

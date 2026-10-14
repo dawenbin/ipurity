@@ -1,10 +1,10 @@
 /*
  * online.js —— 「联网核验」（可选，默认全程不联网）
  *
- * 为什么需要它：全球段表只能看到 IP 属于哪个 ASN。同一个 ASN 里既有住宅池，也有对方
+ * 为什么需要它：IP 归属表只能看到 IP 属于哪个 ASN。同一个 ASN 里既有住宅池，也有对方
  * 机房的客户段 —— 例如 177.202.126.0/24 挂在 AS4766（Korea Telecom）下面，但那个
  * /24 的 org 是「Ace Data Centers II, LLC」，是机房而不是住宅。光看 ASN 判不出来，
- * 只能问接口要这个 /24 的 org/isp/托管标记。
+ * 只能问接口要这个网段的 org/isp/托管标记。
  *
  * 这里统一两家免费接口（都不需要 key）：
  *   - ipwho.is    HTTPS + CORS，浏览器里能直接调，给 isp / org / 域名
@@ -88,7 +88,7 @@
   }
 
   /* 打码行要抽样哪几个 IP：
-     第 4 段打码 = 一个 /24，抽 3 个主机；第 1/2/3 段打码 = 跨 /24，均匀抽 maxSamples 个。 */
+     第 4 段打码 = 一个网段，抽 3 个主机；第 1/2/3 段打码 = 跨 /24，均匀抽 maxSamples 个。 */
   function samplesFor(pattern, maxSamples) {
     maxSamples = maxSamples || 6;
     var p = String(pattern).split(".");

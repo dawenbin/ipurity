@@ -87,11 +87,11 @@
       var lk = World.lookup(tgt.ip);
       if (lk) {
         out.push(cell("离线 ASN", "<b>AS" + lk.asn + "</b> " + esc(lk.name || "") + " · " + esc(lk.cc || "") +
-          " · " + esc(CAT_TXT[lk.t] || "未知"), "全球段表 · iptoasn 段表 + PeeringDB + bad-asn-list", ASN_TONE[lk.t]));
+          " · " + esc(CAT_TXT[lk.t] || "未知"), "IP 归属表 · iptoasn + PeeringDB + bad-asn-list", ASN_TONE[lk.t]));
         out.push(cell(lk.calibrated ? "该 ASN 住宅占比" : "该 ASN 类型先验",
           "<b>" + Math.round(lk.p * 100) + "%</b> " +
-          (lk.calibrated ? "（已用实测样本 /24 标定）" : "（未标定 · 按类型上限）"),
-          "标定库 asn-calib.js（用实测样本的 /24 反推这个 ASN 的住宅占比）", shareTone(Math.round(lk.p * 100))));
+          (lk.calibrated ? "（已用实测记录 /24 标定）" : "（未标定 · 按类型上限）"),
+          "标定库 asn-calib.js（用实测记录的 /24 反推这个 ASN 的住宅占比）", shareTone(Math.round(lk.p * 100))));
       }
     }
     return out;

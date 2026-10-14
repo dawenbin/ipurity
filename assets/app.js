@@ -3,12 +3,12 @@
   "use strict";
   var Core = window.AdvisorCore;
   var DATA = window.SEGMENT_DATA || null;
-  var World = window.IPWorld || null;          // 全球段表（ASN 全量段表 + 标定）
-  var City = window.CityPacks || null;         // 城市片（按 /8 懒加载）
+  var World = window.IPWorld || null;          // IP 归属表（ASN 全量段表 + 标定）
+  var City = window.CityPacks || null;         // 城市数据（按 IP 第一段分片加载）
   var Online = window.IPOnline || null;        // 联网核验（可选，点了才联网）
   var worldState = "idle";                     // idle | loading | ready | failed
   var state = { items: [], rows: [], ranked: [], counts: {}, filter: "all", active: null, unmatched: [] };
-  var cityLoaded = {};                         // o1 → true（已 load 过的城市片）
+  var cityLoaded = {};                         // o1 → true（已 load 过的城市数据）
 
   var $ = function (id) { return document.getElementById(id); };
   /* 不经过 DOM 的文案（复制到剪贴板的文本、alert）自己翻一次；DOM 里的由 i18n.js 的观察器兜底 */
@@ -28,11 +28,11 @@
   function tone(t) { return "t-" + (t || "x"); }
   var TIER_TONE = { A: "g", B: "w", C: "n", D: "r", X: "x" };
   /* 只有「跨多段的打码行」（第 2/3 段打码 = 256 个取值散在整个 /8）才谈得上分布：
-     「256 个取值里有 218 个落在美国」是有信息量的；第 4 段打码是一个 /24、单 IP 是一个地址，
+     「256 个取值里有 218 个落在美国」是有信息量的；第 4 段打码是一个网段、单 IP 是一个地址，
      它们写「1/1 = 100%」只是噪声。 */
   function hasDist(r) { return (r.starPos === 1 || r.starPos === 2) && r.sampled > 1; }
-  /* 类型说明：级别那一格已经有「估算」徽标了，正文里不再重复「（全球段表估算）」 */
-  function tierTextShort(r) { return String(r.tierText || "").replace("（全球段表估算）", "").replace("（全球段表）", ""); }
+  /* 类型说明：级别那一格已经有「估算」徽标了，正文里不再重复「（按运营商估算）」 */
+  function tierTextShort(r) { return String(r.tierText || "").replace("（按运营商估算）", "").replace("（按运营商）", ""); }
 
   /* 国旗用图片，不用 emoji：Windows 的 Segoe UI Emoji 里没有国旗字形，
      🇺🇸 会退成「US」两个字母（会跟「只显示中文名」的要求打架）。拿不到图就只剩中文名。 */
@@ -85,10 +85,10 @@
       var o1 = String(r.pattern).split(".")[0];
       var loaded = City && City.has && City.has(o1);
       var why = loaded
-        ? "城市库 " + o1 + ".x 这一段的记录里只有国家、没有城市名"
+        ? "城市数据 " + o1 + ".x 这一段的记录里只有国家、没有城市名"
         : (cityMissed[o1]
-          ? "DB-IP 城市库没有 " + o1 + ".x 这一段（保留段 / 未分配段本来就没有记录）"
-          : "这一行的城市片还在拉 · 拉到位会自己补上");
+          ? "DB-IP 城市数据没有 " + o1 + ".x 这一段（保留段 / 未分配段本来就没有记录）"
+          : "这一行的城市数据还在拉 · 拉到位会自己补上");
       return '<span class="mono-s" title="' + esc(why) + '">—</span>';
     }
     var why = Core.cityLabel(ci.city) + "　" + ci.src +
@@ -99,78 +99,68 @@
 
   /* 「来源」这一列只有三种值，口径也只写一份：表格悬停、详情定义格共用 */
   function rowSrcName(r) {
-    return r.source === "联网核验" ? "联网核验" : (r.source === "全球ASN" ? "全球段表" : "实测样本");
+    return r.source === "联网核验" ? "联网核验" : (r.source === "全球ASN" ? "IP 归属表" : "实测记录");
   }
   function rowSrcWhy(r) {
     if (r.source === "联网核验") { return "接口抽样实测 · 命中机房即整行改判"; }
-    if (r.source === "全球ASN") { return "ASN 段表估算 · 只看得到 ASN，级别是上限"; }
+    if (r.source === "全球ASN") { return "ASN 级估算 · 只看得到 ASN，级别是上限"; }
     return (r.starPos === 1 || r.starPos === 2)
-      ? "实测 · 该 o1.*.o3 的 256 个 /24 逐个查过" : "实测 · 该 /24 的扫描记录";
+      ? "实测 · 该 o1.*.o3 的 256 个网段逐个查过" : "实测 · 该网段的扫描记录";
   }
 
   /* ---------- 数据包 ---------- */
   function initData() {
     if (!DATA) {
-      $("dataDate").textContent = "未加载";
       if ($("tableHost")) {
-        $("tableHost").innerHTML = '<div class="empty">实测样本缺失：请先运行 <code>tools/make-data.ps1</code> 生成 <code>data/segments-data.js</code>。没有它也能用，只是全部落到全球段表估算。</div>';
+        $("tableHost").innerHTML = '<div class="empty">实测记录缺失：请先运行 <code>tools/make-data.ps1</code> 生成 <code>data/segments-data.js</code>。没有它也能用，只是全部落到 IP 归属表估算。</div>';
       }
     } else {
     var keys = Object.keys(DATA.prefixes || {});
-    $("dataDate").textContent = DATA.generated || "-";
-    $("dataPrefixes").textContent = keys.length;
-    $("dataRows").textContent = (keys.length * 256).toLocaleString("en-US") + " 个 /24";
     if ($("genAt")) { $("genAt").textContent = "数据包生成于 " + (DATA.generated || "?") + " · " + (DATA.source || ""); }
     }
     initWorld();
   }
 
-  /* 全球段表：后台拉段表（4.1 MB）+ ASN 元数据（2.9 MB）+ 标定表（16 KB），失败就降级 */
+  /* IP 归属表：后台拉段表（4.1 MB）+ ASN 元数据（2.9 MB）+ 标定表（16 KB），失败就降级 */
   function initWorld() {
-    if (!World || !World.load) { if ($("worldState")) { $("worldState").textContent = "不可用"; } return Promise.resolve(false); }
+    if (!World || !World.load) { return Promise.resolve(false); }
     worldState = "loading";
     /* 下载期间报字节数：段表 4.1 MB + ASN 元数据 2.9 MB，慢线路下要好几秒 */
     worldP = World.load({
       onProgress: function (name, got, total) {
         var pct = downloadPct(got, total);
-        if ($("worldState")) { $("worldState").textContent = "下载" + name + " " + pct + "%"; }
-        if (busy) { setProgress(pct, 100, "下载" + name + " " + pct + "%（全球段表）"); }
+        if (busy) { setProgress(pct, 100, "下载 IP 归属表 " + pct + "%"); }
       }
     })
       .then(function (ok) {
         if (!ok) { throw new Error("加载失败"); }
         worldState = "ready";
-        var p = World.packed() || {};
         var cov = World.coverage() || { pct: {} };
-        if ($("worldState")) {
-          $("worldState").textContent = (p.segments / 10000).toFixed(1) + " 万段 · 覆盖全部可路由 IPv4";
-        }
         if ($("genAt")) {
           $("genAt").textContent = ($("genAt").textContent || "") +
-            " ｜ 全球段表 " + (World.meta().generated || "?") + "（住宅 " + (cov.pct[1] || 0) + "% / 机房 " +
+            " ｜ IP 归属表 " + (World.meta().generated || "?") + "（住宅 " + (cov.pct[1] || 0) + "% / 机房 " +
             (cov.pct[2] || 0) + "% / 商业 " + (cov.pct[3] || 0) + "%）";
         }
         return true;
       })
       .catch(function () {
         worldState = "failed";
-        if ($("worldState")) { $("worldState").textContent = "未加载（需 http:// 打开）"; }
         return false;
       });
     return worldP;
   }
   var worldP = null;
 
-  /* 实测样本里没有这个键 → 这一行要靠全球段表；顺手把要用的城市片拉下来 */
+  /* 实测记录里没有这个键 → 这一行要靠 IP 归属表；顺手把要用的城市数据拉下来 */
   function needsWorld(pattern) {
     return !DATA || !DATA.prefixes || !DATA.prefixes[Core.patternKey(pattern)];
   }
-  /* 城市片（每个 /8 一片，平均 150 KB）：① 有了它「城市」列才有落点城市；② 「国家」列也改用
-     DB-IP 的定位国而不是 ASN 注册国。清单用到的 /8 一次拉到底 —— 判定不等它，边拉边补。 */
-  var cityMissed = {};   /* o1 → 城市库确实没有这一段（404），别拉第二遍；网络失败不算，留给重试 */
+  /* 城市数据（每个 /8 一片，平均 150 KB）：① 有了它「城市」列才有落点城市；② 「国家」列也改用
+     DB-IP 的定位国而不是 ASN 注册国。清单用到的第一段一次拉到底 —— 判定不等它，边拉边补。 */
+  var cityMissed = {};   /* o1 → 城市数据确实没有这一段（404），别拉第二遍；网络失败不算，留给重试 */
   var cityLoading = false;   /* 只是为了措辞：拉取中 / 拉失败 */
   var CITY_BATCH = 16;   /* 一批 16 个请求：CDN 扛得住，进度条也动得起来 */
-  /* 拉城市片：成功记 cityLoaded，没数据记 cityMissed ——「这一段没有数据」和「还没拉」是两件事。
+  /* 拉城市数据：成功记 cityLoaded，没数据记 cityMissed ——「这一段没有数据」和「还没拉」是两件事。
      每片到位就回调 onSlice(o1)：页面只重算那一个 /8 的行，不用等整批拉完再算。 */
   function loadCitySlices(o1s, onProgress, onSlice) {
     if (!City || !City.load || !o1s.length) { return Promise.resolve(0); }
@@ -201,10 +191,10 @@
     });
     return out;
   }
-  /* 城市片的数字只讲「这份清单要不要」：库本身 220 片 / 33 MB，跟当前清单无关。
-     以前顶栏写「已载入 46 / 256 片（还有 132 片没拉）」—— 46 是所有清单累加的、
-     132 是本单没拉的、256 是库上限，三个分母混在一起，只能让人以为还差 210 片。
-     这里三档分开数（已取 / 库里没数据 / 本单还没拉），分母一律是本单用到的 /8。 */
+  /* 城市数据的数字只讲「这份清单要不要」：库本身 220 份 / 33 MB，跟当前清单无关。
+     以前顶栏写「已载入 46 / 256 份（还有 132 份没拉）」—— 46 是所有清单累加的、
+     132 是本单没拉的、256 是库上限，三个分母混在一起，只能让人以为还差 210 份。
+     这里三档分开数（已取 / 库里没数据 / 本单还没拉），分母一律是本单用到的第一段。 */
   function cityScope() {
     var seen = {}, need = [];
     (state.items || []).forEach(function (it) {
@@ -220,14 +210,7 @@
     });
     return { need: need, took: took, noData: noData, pending: pending };
   }
-  function paintCityState() {
-    var el = $("cityState");
-    if (!el) { return; }
-    var s = cityScope();
-    if (!s.need.length) { el.textContent = "按需加载"; return; }
-    el.textContent = s.took + " / " + s.need.length + " 片" + (s.pending.length ? "（差 " + s.pending.length + "）" : "");
-  }
-  /* 城市片到位的处理：只重算这一个 /8 的行（国家 / 城市两列），攒到下一帧一起重绘。
+  /* 城市数据到位的处理：只重算这一个 /8 的行（国家 / 城市两列），攒到下一帧一起重绘。
      判定本来就不等城市数据（分级只看 ASN），所以这是同一趟里的补写，不是第二趟加载。 */
   function recomputePlaces(o1) {
     var touched = 0;
@@ -239,7 +222,7 @@
     });
     return touched;
   }
-  /* 重绘节流：180 片到位 = 180 次重排 200 行 DOM，不节流会抖。250ms 一次足够跟手 */
+  /* 重绘节流：180 份到位 = 180 次重排 200 行 DOM，不节流会抖。250ms 一次足够跟手 */
   var repaintP = null;
   function scheduleRepaint() {
     if (repaintP) { return; }
@@ -268,7 +251,7 @@
 
   function renderChips() {
     var c = state.counts, rec = (c.A || 0) + (c.B || 0);
-    /* 只留能直接决定「先试哪几行」的数字：各级行数 + 推荐行数。
+    /* 只留能直接决定排序数字：各级行数 + 推荐行数。
        枚举样本这类每行都有的汇总（加起来也没法用）不在这里重复。 */
     $("chips").innerHTML =
       chip("all", "", "全部", state.ranked.length, "显示全部行 · 排名按行（带 * 的整行一起排）") +
@@ -293,8 +276,8 @@
     /* 「住宅占比」和「构成」本来就是同一件事（住宅 = 构成里那块绿的），合成一列 */
     var html = '<table><thead><tr>' +
       '<th>排名</th><th>级别</th><th>IP 模式（整行）</th><th>构成 · 住宅</th>' +
-      '<th title="打码行把 254/256 个取值逐个定位后取最多的那个国家（城市片 / 全球段表）">主要国家</th>' +
-      '<th title="打码行把 254/256 个取值逐个定位后取最多的那个城市（城市片 / 实测样本）">主要城市</th>' +
+      '<th title="打码行把 254/256 个取值逐个定位后取最多的那个国家（城市数据 / IP 归属表）">主要国家</th>' +
+      '<th title="打码行把 254/256 个取值逐个定位后取最多的那个城市（城市数据 / 实测记录）">主要城市</th>' +
       '<th>来源</th><th>得分</th><th></th></tr></thead><tbody>';
     rows.forEach(function (r, i) {
       if (!r.ok) {
@@ -308,7 +291,7 @@
       var stack = "";
       [1, 2, 3, 4, 6].forEach(function (k) {
         if (widths[k] <= 0) { return; }
-        /* 住宅段是全球段表推算时，段自己的提示也带 ≈，别让人以为是实测计数 */
+        /* 住宅段是 IP 归属表推算时，段自己的提示也带 ≈，别让人以为是实测计数 */
         var n = Core.catCount(r, k);
         stack += '<i class="' + CATCLS[k] + '" style="width:' + widths[k] + '%;background:var(--' + (CATCLS[k] || "unk") +
           ')" title="' + Core.CAT_NAME[k] + " " + n + '"></i>';
@@ -318,12 +301,12 @@
           '%：这一层只看得到 ASN，剩下这一截是住宅还是机房判不出来"></i>';
       }
       /* 全表统一成一个形状：`[≈]住宅数 / 样本数 · 占比%`
-         —— 实测样本给实测计数；全球段表是按 ASN 先验折算的（带 ≈）；单个真实 IP 的样本就是它自己（分母 1）。 */
+         —— 实测记录给实测计数；IP 归属表是按 ASN 先验折算的（带 ≈）；单个真实 IP 的样本就是它自己（分母 1）。 */
       var homeTxt = Core.homeTxt(r);
       var homeTitle = r.probOnly
-        ? "全球段表：按 ASN 住宅先验对 " + r.sampled + " 个取值做概率加权折算（≈ 表示不是逐个实测），占比按 ASN 级不确定性封顶 90%"
+        ? "IP 归属表：按 ASN 住宅先验对 " + r.sampled + " 个取值做概率加权折算（≈ 表示不是逐个实测），占比按 ASN 级不确定性封顶 90%"
         : (r.singleHost ? "你粘贴的这一行是一个真实 IP，样本只有它自己 —— 没有占比可言，直接看它归哪一类"
-          : "实测样本：住宅 /24 数 / 样本数 · 占比");
+          : "实测记录：住宅网段数 / 样本数 · 占比");
       var ispCell = '<div class="tcell"><div class="stack">' + stack + '</div>' +
         /* 单个 IP 没有占比，颜色跟着它的类别走；打码行才按住宅占比分档 */
         '<span class="share ' + tone(r.singleHost ? CAT_TONE[r.host24 ? r.host24.cat : 6] : Core.shareBand(Core.homePct(r))) + '" title="' + esc(homeTitle) + '">' +
@@ -338,7 +321,7 @@
       html += '<tr data-i="' + r.index + '" class="rowin' + (state.active === r.index ? " active" : "") + '" style="animation-delay:' + Math.min(i * 12, 400) + 'ms">' +
         '<td class="mono-s"><b>' + r.rank + '</b></td>' +
         '<td><span class="tier ' + r.tier + '"><i></i>' + r.tier +
-          (r.approx ? '<span class="est" title="全球段表估算：只看得到 ASN，级别是上限">估算</span>' : "") + '</span></td>' +
+          (r.approx ? '<span class="est" title="IP 归属表估算：只看得到 ASN，级别是上限">估算</span>' : "") + '</span></td>' +
         /* 级别药丸和「住宅」那一格已经说清是不是机房，不再往 IP 上贴第三个标签 */
         '<td><b>' + r.pattern + '</b></td>' +
         '<td>' + ispCell + '</td>' +
@@ -422,7 +405,7 @@
     var vHome = r.singleHost ? "" : "住宅 " + Core.homeTxt(r);
     if (r.online && r.online.verdict === "DC") { vHome = "住宅 0%（联网核验判定为机房）"; }
     var verdict = '<div class="verdict ' + tone(tierTone) + '">' +
-      '<b class="v1">' + r.tier + (r.approx ? '<span class="est" title="实测样本里没有这一行，级别是用全球 ASN 段表推的（上限）">估算</span>' : "") + "</b>" +
+      '<b class="v1">' + r.tier + (r.approx ? '<span class="est" title="实测记录里没有这一行，级别是用 IP 归属表推的（上限）">估算</span>' : "") + "</b>" +
       "<b class=\"v1\">" + esc(tierTextShort(r)) + "</b>" +
       (vHome ? '<span class="v2">' + esc(vHome) + "</span>" : "") +
       '<span class="scpill" title="行级得分 0–100（离线分级算出）">得分 <b class="sc ' + Core.scoreBand(r.score) + '">' + r.score + "</b></span>" +
@@ -430,13 +413,13 @@
     /* 定义格：标签一列对齐，值一列 —— 不再是一串挤在一起的行内文本 */
     var defs = [];
     defs.push(["建议拿", '<b class="net" title="' + esc(r.starPos === 3
-      ? "第 4 段是打码位：按这个 /24 的 254 个可用地址（1–254）统计，.0 网络地址 / .255 广播地址已跳过"
-      : "该行枚举取值里排最前的那个 /24") + '">' + esc(Core.maskedNetwork(r.pattern)) + "</b>", ""]);
+      ? "第 4 段是打码位：按这个网段的 254 个可用地址（1–254）统计，.0 网络地址 / .255 广播地址已跳过"
+      : "该行枚举取值里排最前的那个网段") + '">' + esc(Core.maskedNetwork(r.pattern)) + "</b>", ""]);
     defs.push(["来源", rowSrcName(r), rowSrcWhy(r)]);
     /* 说明统一成一句话：<口径> · <数据源>［，<分布>］。
-       分布只在真的枚举过多个取值时给 —— 单个 IP / 单个 /24 写它没有意义。 */
+       分布只在真的枚举过多个取值时给 —— 单个 IP / 单个网段写它没有意义。 */
     function distWhy(o, how, what) {
-      if (!o || !o.src) { return "城市库 DB-IP 这一层查不到（该 /8 的城市片可能没加载）"; }
+      if (!o || !o.src) { return "城市数据 DB-IP 这一层查不到（这一段 IP 的城市数据可能没加载）"; }
       return (how || o.src) + (hasDist(r) ? "，" + o.count + "/" + o.n + " = " + o.pct + "% 落在" + what : "");
     }
     var ccName = r.country && r.country.cc ? countryName(r.country.cc) : "";
@@ -445,13 +428,13 @@
     var cityName = r.city && r.city.city ? Core.cityLabel(r.city.city) : "";
     defs.push(["主要城市", r.city && r.city.city ? citySpan(r.city.city, null) : "—",
       r.city ? distWhy(r.city, r.city.src, cityName) : distWhy(null)]);
-    /* 「/24 归属」和其它格一个形状：值 = 运营方，口径写进 dwhy。
-       口径必须对得上数据来源：实测样本里逐 /24 查过的才叫实测记录；
+    /* 「网段归属」和其它格一个形状：值 = 运营方，口径写进 dwhy。
+       口径必须对得上数据来源：实测记录里逐个网段查过的才叫实测记录；
        没命中的行只有 ASN 这一层 —— 那种情况下说「整段归 X」等于把估算说成事实。 */
     if (r.host24 && (r.singleHost || r.starPos === 3)) {
-      defs.push(["/24 归属", "<b>" + esc(r.host24.isp) + "</b>",
+      defs.push(["网段归属", "<b>" + esc(r.host24.isp) + "</b>",
         r.probOnly
-          ? "全球段表 · ASN 级估算：这个 /24 归 " + (r.host24.asn ? "AS" + r.host24.asn + " " : "") +
+          ? "IP 归属表 · 按运营商估算：这个网段归 " + (r.host24.asn ? "AS" + r.host24.asn + " " : "") +
             Core.CAT_NAME[r.host24.cat] + "，占比按 ASN 先验折算（不是逐段实测）"
           : "实测记录（ip-api）· " + r.host24.network + " 整段归 " + Core.CAT_NAME[r.host24.cat] +
             (r.host24.la ? " · 落在洛杉矶都会区" : "")]);
@@ -466,8 +449,8 @@
       var cCnt = function (k) { return k === "unk" ? "" : Core.catCount(r, k); };
       var cCls = function (k) { return k === "unk" ? "unk" : (CATCLS[k] || "unk"); };
       var cTitle = function (k) {
-        if (k === "unk") { return "未知 " + wd[k] + "%：全球段表这一层只看得到 ASN（住宅占比还封顶 90%），剩下的部分是住宅还是机房判不出来"; }
-        return cName(k) + " " + cCnt(k) + " · " + wd[k] + "%（" + (r.probOnly ? "全球段表折算，不是逐个实测" : "实测样本") + "）";
+        if (k === "unk") { return "未知 " + wd[k] + "%：IP 归属表这一层只看得到 ASN（住宅占比还封顶 90%），剩下的部分是住宅还是机房判不出来"; }
+        return cName(k) + " " + cCnt(k) + " · " + wd[k] + "%（" + (r.probOnly ? "IP 归属表折算，不是逐个实测" : "实测记录") + "）";
       };
       if (ck.length) {
         var narrow = ck.filter(function (k) { return wd[k] < 14; });
@@ -498,7 +481,7 @@
     }
     if (r.capped) {
       chips2 += rtag("b", "占比封顶 " + Math.round((Core.ASN_CONF_CAP || 0.9) * 100) + "%",
-        "占比已按 ASN 级不确定性封顶：抽样再干净也不代表这个 /24 一定干净 —— 同一个 ASN 下就有对方机房/企业客户的段" +
+        "占比已按 ASN 级不确定性封顶：抽样再干净也不代表这个网段一定干净 —— 同一个 ASN 下就有对方机房/企业客户的段" +
         "（例如 177.202.126.0/24 挂在 KT 下面，但整段是 Ace Data Centers 的机房）。");
     }
     if (r.singleHost) { chips2 += rtag("c", "单个 IP", "清单里的这一行就是一个真实 IP，没有占比可言，直接看它归哪一类。"); }
@@ -512,8 +495,8 @@
     }
     if (chips2) { kv += '<div class="rtags">' + chips2 + "</div>"; }
 
-    /* 这一行是不是全球段表算出来的：用 asnHist 判断，别用 source —— 联网核验会把
-       source 改成「联网核验」，但枚举/热力图还是全球段表那套数据 */
+    /* 这一行是不是 IP 归属表算出来的：用 asnHist 判断，别用 source —— 联网核验会把
+       source 改成「联网核验」，但枚举/热力图还是 IP 归属表那套数据 */
     var fromGlobal = !!(r.asnHist && Object.keys(r.asnHist).length);
     /* 颜色含义由上面那条构成条负责（名字就在段上）；图例只补热力图自己的标记 */
     var legend = (r.laCount || 0)
@@ -558,7 +541,7 @@
     if ($("heat")) {
       var h = "";
       if (fromGlobal) {
-        /* 全球段表：每个取值的颜色按 ASN 类型，住宅概率高的直接画绿 */
+        /* IP 归属表：每个取值的颜色按 ASN 类型，住宅概率高的直接画绿 */
         var parts = r.pattern.split(".");
         var hFrom = r.starPos === 3 ? 1 : 0, hTo = r.starPos === 3 ? 254 : 255;
         for (var y2 = hFrom; y2 <= hTo; y2++) {
@@ -574,12 +557,12 @@
             T(e ? (Core.CAT_NAME[e.t] || "未知") : "未获取"));
         }
       } else {
-        /* 实测样本：第 2 段打码 = 256 个 /24 各一格；第 4 段打码 = 同一个 /24 的 254 个可用地址。 */
+        /* 实测记录：第 2 段打码 = 256 个网段各一格；第 4 段打码 = 同一个网段的 254 个可用地址。 */
         var codes = DATA.prefixes[r.key].c.split(","), cities = DATA.prefixes[r.key].g.split(","), isps = DATA.prefixes[r.key].i.split(",");
         var one24 = r.starPos === 3;
         var hLo = one24 ? 1 : 0, hHi = one24 ? 254 : 255;
         for (var y = hLo; y <= hHi; y++) {
-          /* 一个 /24 一格：实测记录按 /24 存，索引是打码那一位的「段内序号」 */
+          /* 一个网段一格：实测记录按 /24 存，索引是打码那一位的「段内序号」 */
           var idx = one24 ? r.host24.o2 : y;
           var code = +codes[idx] || 0, cat = code & 7, la = !!(code & 8);
           var city = DATA.cities[+cities[idx]] || "", isp = DATA.isps[+isps[idx]] || "";
@@ -689,16 +672,16 @@
     var html = "";
     if (s.pending.length) {
       html = cityLoading
-        ? "城市数据还在拉：<b>" + s.pending.length + " 片</b>没到位（约 " + Math.round(s.pending.length * 0.15) + " MB）"
-        : "<b>" + s.pending.length + " 片</b>城市数据没拉下来（网络失败）";
+        ? "城市数据还在拉：<b>" + s.pending.length + " 份</b>没到位（约 " + Math.round(s.pending.length * 0.15) + " MB）"
+        : "<b>" + s.pending.length + " 份</b>城市数据没拉下来（网络失败）";
       if (noCity.length) { html += " —— <b>" + noCity.length + " 行</b>暂时没有城市"; }
       if (!cityLoading) { html += ' <button class="sm" id="fillCities">重试</button>'; }
     } else if (noCity.length) {
       /* 两种「查不到」分开说：整段库里没有（保留/未分配段） / 段在但记录里只有国家 */
       html = "<b>" + noCity.length + " 行</b>查不到城市：" + (noSlice === noCity.length
-        ? "DB-IP 城市库没有这些 /8（保留段 / 未分配段本来就没有记录）"
+        ? "DB-IP 城市数据没有这些段（保留段 / 未分配段本来就没有记录）"
         : (noSlice
-          ? "DB-IP 城市库对这些段只记到国家（其中 " + noSlice + " 行所在的 /8 整段没有数据）"
+          ? "DB-IP 城市数据对这些段只记到国家（其中 " + noSlice + " 行所在的这一段整段没有数据）"
           : "DB-IP 对这些段的记录里只有国家、没有城市名"));
     }
     el.hidden = !html;
@@ -710,32 +693,32 @@
   function retryCities() {
     if (busy) { return; }
     var want = itemO1s(state.items || []);
-    if (!want.length) { toast("城市片都到位了"); return; }
+    if (!want.length) { toast("城市数据都到位了"); return; }
     busy = true; $("run").disabled = true;
     cityLoading = true;
-    setProgress(0, want.length, "重拉城市片 0/" + want.length + "…");
+    setProgress(0, want.length, "重拉城市数据 0/" + want.length + "…");
     loadCitySlices(want,
       function (n, total) {
-        setProgress(n, total, "重拉城市片 " + n + "/" + total + "…");
-        paintCityState(); paintCityHint();
+        setProgress(n, total, "重拉城市数据 " + n + "/" + total + "…");
+        paintCityHint();
       },
       function (o1) { if (recomputePlaces(o1)) { scheduleRepaint(); } })
       .then(function (okN) {
         cityLoading = false;
         stopRepaint();
         state.counts = Core.countRows(state.rows); state.ranked = Core.rankRows(state.rows);
-        paintCityState(); paintCityHint();
+        paintCityHint();
         busy = false; $("run").disabled = false;
         setProgress(null); setStat("");
         renderChips(); renderTable();
         if (state.active !== null && state.active !== undefined) { showDetail(state.active); }
-        toast("补了 " + okN + " 片城市数据");
+        toast("补了 " + okN + " 份城市数据");
       })
       .catch(function (e) {
         cityLoading = false;
         busy = false; $("run").disabled = false; setProgress(null); setStat("");
         paintCityHint();
-        toast("重拉城市片失败：" + (e && e.message ? e.message : e));
+        toast("重拉城市数据失败：" + (e && e.message ? e.message : e));
       });
   }
 
@@ -744,7 +727,6 @@
     var rep = Core.parseWithReport($("input").value);
     state.items = rep.items; state.unmatched = rep.unmatched;
     state.filter = "all";   /* 新的一单从「全部」开始，别把上一单的筛选带过来 */
-    paintCityState();   /* 徽标按新清单的口径重算，上一单的数字不留在顶栏 */
     if (!rep.items.length) {
       state.rows = []; state.ranked = []; state.counts = {};
       $("chips").innerHTML = ""; setStat("");
@@ -758,11 +740,11 @@
     $("run").disabled = true; $("verify").disabled = true;
     setProgress(0, rep.items.length, "判定 " + rep.items.length + " 行…");
 
-    /* 一趟跑完：① 需要的话等全球段表（页面打开时就在后台下）② 判定 ------------
-       ③ 城市片边拉边补。判定不等城市数据（分级只看 ASN），所以结论先出来，
-       城市/国家两列随城市片到位逐块补上，不用点第二次。 */
+    /* 一趟跑完：① 需要的话等 IP 归属表（页面打开时就在后台下）② 判定 ------------
+       ③ 城市数据边拉边补。判定不等城市数据（分级只看 ASN），所以结论先出来，
+       城市/国家两列随城市数据到位逐块补上，不用点第二次。 */
     var waitWorld = (gaps && worldState === "loading" && worldP) ? worldP : Promise.resolve(true);
-    if (gaps && worldState === "loading") { setStat("等全球段表（4.1 MB，只下一次）…"); }
+    if (gaps && worldState === "loading") { setStat("等 IP 归属表（4.1 MB，只下一次）…"); }
     var cityWant = itemO1s(rep.items);
     waitWorld
       .then(function () { return analyzeChunked(rep.items, "判定"); })
@@ -776,15 +758,15 @@
         try { localStorage.setItem("ippa.input", $("input").value); } catch (e) {}
         if (rep.unmatched.length) { toast("已判定 " + rep.items.length + " 个模式，" + rep.unmatched.length + " 行没认出来"); }
         if (gaps && worldState === "failed") {
-          toast("全球段表没加载：请用 http:// 打开（静态托管或 python -m http.server）");
+          toast("IP 归属表没加载：请用 http:// 打开（静态托管或 python -m http.server）");
         }
         if (!cityWant.length) { return 0; }
         cityLoading = true;
-        setProgress(0, cityWant.length, "城市数据 0/" + cityWant.length + " 片…");
+        setProgress(0, cityWant.length, "城市数据 0/" + cityWant.length + " 份…");
         return loadCitySlices(cityWant,
           function (n, total) {
-            setProgress(n, total, "城市数据 " + n + "/" + total + " 片…");
-            paintCityState(); paintCityHint();
+            setProgress(n, total, "城市数据 " + n + "/" + total + " 份…");
+            paintCityHint();
           },
           function (o1) { if (recomputePlaces(o1)) { scheduleRepaint(); } });
       })
@@ -793,7 +775,7 @@
         stopRepaint();
         state.counts = Core.countRows(state.rows);
         state.ranked = Core.rankRows(state.rows);
-        paintCityState(); paintCityHint();
+        paintCityHint();
         renderChips(); renderTable();
       })
       .catch(function (e) { toast("判定出错：" + (e && e.message ? e.message : e)); })
@@ -834,7 +816,7 @@
 
   /* ---------- 事件 ---------- */
   /* ---------- 联网核验：抽样几个 IP 问免费接口，把「ASN 里的机房段」挑出来 ----------
-     全球段表只认得 ASN：177.202.126.0/24 挂在 AS4766（KT）下面，但那个 /24 的 org 是
+     IP 归属表只认得 ASN：177.202.126.0/24 挂在 AS4766（KT）下面，但那个网段的 org 是
      Ace Data Centers —— 只有接口才知道。
      「判定」全程离线（只拉本站自己的数据文件），这里是另一个按钮：默认不发请求。
      拆开是因为这一步是唯一依赖第三方的地方 —— 不点就不发，判定结论也不会因为接口

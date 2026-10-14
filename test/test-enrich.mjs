@@ -138,7 +138,7 @@ globalThis.fetch = realFetch;
 
 /* ---------- 结论 / 标签 / 分数 ---------- */
 const row = (o) => Object.assign({
-  ok: true, tier: "A", tierText: "住宅为主（全球段表估算）", approx: true, source: "全球ASN",
+  ok: true, tier: "A", tierText: "住宅为主（IP 归属表估算）", approx: true, source: "全球ASN",
   counts: { 1: 229, 2: 0, 3: 0, 4: 0, 6: 0 }, sampled: 254, pctIsp: 90, asnHist: { 4766: 254 }
 }, o);
 

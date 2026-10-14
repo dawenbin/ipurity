@@ -8,7 +8,7 @@
  *
  * 用途：打码行第 2 段有 256 种取值，逐个查城市 → 算这一行的落点城市分布
  *       （表格「城市」列、详情里的城市分布）。
- * 局限：免费城市库对住宅 IP 常定位到运营商出口，城市只作参考，不是精确定位。
+ * 局限：免费城市数据对住宅 IP 常定位到运营商出口，城市只作参考，不是精确定位。
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) { module.exports = factory(); }

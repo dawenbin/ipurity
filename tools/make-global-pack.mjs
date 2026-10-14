@@ -13,7 +13,7 @@
  *   5. 都不命中 → 6
  *
  * 用法：node tools/make-global-pack.mjs [--eval]
- *   --eval  额外用 build/prefixmap-all.csv（ip-api 逐 /24 实测样本结果）评估分类准确率
+ *   --eval  额外用 build/prefixmap-all.csv（ip-api 逐 /24 实测记录结果）评估分类准确率
  */
 import { readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { gunzipSync } from "node:zlib";
@@ -275,7 +275,7 @@ if (process.argv.includes("--eval")) {
     if (cat === 2) { dceTotal++; if (ours === 2) { dceHit++; } }
     if (ours === 6) { unknown++; }
   }
-  console.log(`\n对拍 ip-api 实测样本（${total} 个 /24）：类型完全一致 ${hit} (${(100 * hit / total).toFixed(1)}%)`);
+  console.log(`\n对拍 ip-api 实测记录（${total} 个 /24）：类型完全一致 ${hit} (${(100 * hit / total).toFixed(1)}%)`);
   console.log(`住宅段召回 ${ispHit}/${ispTotal} = ${(100 * ispHit / (ispTotal || 1)).toFixed(1)}%   ` +
               `机房段召回 ${dceHit}/${dceTotal} = ${(100 * dceHit / (dceTotal || 1)).toFixed(1)}%   ` +
               `我方判未知 ${unknown} (${(100 * unknown / (total || 1)).toFixed(1)}%)`);
@@ -305,13 +305,13 @@ if (process.argv.includes("--eval")) {
   console.log(`\n住宅 vs 非住宅：准确率 ${(100 * (tp + tn) / (tp + fp + fn + tn)).toFixed(1)}%  ` +
     `精确率 ${(100 * tp / (tp + fp || 1)).toFixed(1)}%  召回率 ${(100 * tp / (tp + fn || 1)).toFixed(1)}%  ` +
     `（TP ${tp} FP ${fp} FN ${fn} TN ${tn}）`);
-  console.log("\n按前缀对级别（只在实测样本过的前缀上；阈值按相同比例折算）：");
+  console.log("\n按前缀对级别（只在实测记录过的前缀上；阈值按相同比例折算）：");
   for (const [k, g] of [...perPrefix.entries()].sort()) {
     const t = tier(g.t, g.n), o = tier(g.o, g.n);
-    console.log(`  ${k.padEnd(12)} 实测样本 ${String(g.t).padStart(3)}/${g.n} → ${t} 级 ｜ 全量包 ${String(g.o).padStart(3)}/${g.n} → ${o} 级  ${t === o ? "" : "  ← 不一致"}`);
+    console.log(`  ${k.padEnd(12)} 实测记录 ${String(g.t).padStart(3)}/${g.n} → ${t} 级 ｜ 全量包 ${String(g.o).padStart(3)}/${g.n} → ${o} 级  ${t === o ? "" : "  ← 不一致"}`);
   }
 
-  /* 分歧集中在哪几个 ASN？按在实测样本集里覆盖的 /24 数量排序 */
+  /* 分歧集中在哪几个 ASN？按在实测记录集里覆盖的 /24 数量排序 */
   const perAsn = new Map();
   for (const row of lines.slice(1)) {
     if (!row.trim()) { continue; }
@@ -330,9 +330,9 @@ if (process.argv.includes("--eval")) {
   const wrong = [...perAsn.entries()]
     .filter(([, g]) => (g.org > 0) !== (g.ours === 1) || ((g.truth[1] || 0) !== g.n && g.truth[1]))
     .sort((a, b) => b[1].n - a[1].n).slice(0, 18);
-  console.log("\n覆盖量最大的分歧 ASN（实测样本判为住宅 / 我们判了别的，或反之）：");
+  console.log("\n覆盖量最大的分歧 ASN（实测记录判为住宅 / 我们判了别的，或反之）：");
   for (const [asn, g] of wrong) {
     const truthCat = Object.entries(g.truth).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k}×${v}`).join(" ");
-    console.log(`  AS${String(asn).padEnd(7)} 我们=${g.ours} 实测样本=${truthCat.padEnd(16)} /24 数 ${String(g.n).padStart(3)}  ${g.name.slice(0, 46)}`);
+    console.log(`  AS${String(asn).padEnd(7)} 我们=${g.ours} 实测记录=${truthCat.padEnd(16)} /24 数 ${String(g.n).padStart(3)}  ${g.name.slice(0, 46)}`);
   }
 }

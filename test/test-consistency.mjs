@@ -31,12 +31,12 @@ for (const o1 of [50, 82, 171, 198]) {
   CityPacks.put(o1, readFileSync(join(root, "data", "city", `${o1}.bin`)));
 }
 
-/* 一行一类：实测样本打码 / 全球段表打码 / 实测样本单 IP / 全球段表单 IP */
+/* 一行一类：实测记录打码 / IP 归属表打码 / 实测记录单 IP / IP 归属表单 IP */
 const patterns = [
-  ["50.*.54.100", "Los Angeles", "实测样本打码"],
-  ["171.213.132.*", "Los Angeles", "全球段表打码"],
-  ["198.3.243.16", "Garland", "实测样本单 IP"],
-  ["43.131.250.193", "Los Angeles", "全球段表单 IP"]
+  ["50.*.54.100", "Los Angeles", "实测记录打码"],
+  ["171.213.132.*", "Los Angeles", "IP 归属表打码"],
+  ["198.3.243.16", "Garland", "实测记录单 IP"],
+  ["43.131.250.193", "Los Angeles", "IP 归属表单 IP"]
 ];
 const rep = Core.parseWithReport(patterns.map((p, i) => `${i + 1}\t${p[0]}\t美国\t洛杉矶`).join("\n"));
 const res = Core.analyzeMany(rep.items, DATA, { world: World, cityPack: CityPacks });
@@ -127,7 +127,7 @@ check("CSV 城市列也是原文", Core.toCsv(rows, null, 3).indexOf("Chengdu") 
 
 /* ---------- 国家那一格的来源说法（不再出现「定位国」这种自造词） ---------- */
 check("国家来源写成一句话：<口径> · <数据源>",
-  /^(按 IP 定位 · 城市库 DB-IP|按 ASN 注册地 · 全球段表)$/.test(jp.country.src), jp.country.src);
+  /^(按 IP 定位 · 城市数据 DB-IP|按 ASN 注册地 · IP 归属表)$/.test(jp.country.src), jp.country.src);
 
 /* 第 4 段打码 = 一个 /24：城市片对这个 /24 给的是同一个城市 */
 const rep24 = Core.parseWithReport("1\t82.24.73.*\t美国\t洛杉矶");
@@ -139,17 +139,17 @@ check("第 4 段打码的城市覆盖 == 样本数", r24.city && r24.city.count 
 /* ---------- 构成条：宽度、个数、百分比必须是同一件事 ---------- */
 for (const r of rows.filter((x) => !x.singleHost)) {
   const w = Core.shareWidths(r);
-  /* 未知段（w.unk）也是构成条的一部分：全球段表行看得到 ASN、看不到具体 /24，剩下那一截画成灰色的未知 */
+  /* 未知段（w.unk）也是构成条的一部分：IP 归属表行看得到 ASN、看不到具体 /24，剩下那一截画成灰色的未知 */
   const sum = [1, 2, 3, 4, 6].reduce((a, k) => a + w[k], 0) + (w.unk || 0);
   check(`${r.pattern} 构成条宽度加起来 100%`, Math.abs(sum - 100) <= 1, sum + "%");
-  check(`${r.pattern} 未知段只出现在全球段表估算行上`, r.probOnly ? w.unk >= 0 : w.unk === 0, `${w.unk}% probOnly=${!!r.probOnly}`);
+  check(`${r.pattern} 未知段只出现在IP 归属表估算行上`, r.probOnly ? w.unk >= 0 : w.unk === 0, `${w.unk}% probOnly=${!!r.probOnly}`);
   check(`${r.pattern} 构成条住宅段宽度 == 住宅占比`,
     Math.abs(w[1] - Core.homePct(r)) <= 1, `${w[1]}% vs ${Core.homePct(r)}%`);
   check(`${r.pattern} 构成条上的个数 == 表格住宅列的分子`,
     Core.catCount(r, 1).replace("≈", "") === Core.homeNum(r),
     `${Core.catCount(r, 1)} vs ${Core.homeNum(r)}`);
 }
-check("构成条上每个类别的个数加起来 == 样本数（实测样本行）",
+check("构成条上每个类别的个数加起来 == 样本数（实测记录行）",
   rows.filter((x) => !x.singleHost && !x.probOnly)
     .every((x) => [1, 2, 3, 4, 6].reduce((a, k) => a + Math.round(x.counts[k] || 0), 0) === x.sampled),
   rows.filter((x) => !x.singleHost && !x.probOnly).map((x) => x.pattern).join(" "));

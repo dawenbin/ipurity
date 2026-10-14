@@ -1,9 +1,9 @@
 /*
- * build/prefixmap-all.csv（ip-api 逐 /24 实测样本，含 as + Cat 两列）→ data/asn-calib.js
+ * build/prefixmap-all.csv（ip-api 逐 /24 实测记录，含 as + Cat 两列）→ data/asn-calib.js
  *
  * 为什么需要它：全球 ASN 层只能按 AS 名称/PeeringDB 类型给一个“整块 ASN”的类型，
  * 而大型混合 ASN（AS7018 / AS701 / AS16509 这种）内部既有住宅池也有企业段，
- * 对拍显示这类 ASN 会被系统性高估一级。用我们已经实测样本过的 /24 反推每个 ASN 的
+ * 对拍显示这类 ASN 会被系统性高估一级。用我们已经实测记录过的 /24 反推每个 ASN 的
  * “住宅 /24 占比”，用占比代替“整块算住宅”，就能把虚高压下去。
  *
  * 产物：window.ASN_CALIB = { "7018": [样本数, 住宅数], ... }（只收样本数 >= 5 的 ASN）
@@ -57,7 +57,7 @@ for (const [asn, g] of kept) { calib[asn] = [g.n, g.isp]; names[asn] = g.name; }
 
 const out = {
   generated: new Date().toISOString().slice(0, 16).replace("T", " "),
-  source: "ip-api 逐 /24 实测样本（build/prefixmap-all.csv）反推 ASN 住宅占比",
+  source: "ip-api 逐 /24 实测记录（build/prefixmap-all.csv）反推 ASN 住宅占比",
   legend: "ASN → [样本 /24 数, 判为住宅的 /24 数]；样本数 < " + MIN_SAMPLE + " 的 ASN 不收",
   scannedBlocks: prefixes.size,
   scanned24: lines,
@@ -67,7 +67,7 @@ const out = {
 };
 writeFileSync(join(root, "data", "asn-calib.js"), "window.ASN_CALIB=" + JSON.stringify(out) + ";\n");
 
-console.log(`实测样本前缀 ${prefixes.size} 个 / 去重后 ${lines} 个 /24，覆盖 ASN ${perAsn.size} 个，保留样本 >=${MIN_SAMPLE} 的 ${kept.length} 个`);
+console.log(`实测记录前缀 ${prefixes.size} 个 / 去重后 ${lines} 个 /24，覆盖 ASN ${perAsn.size} 个，保留样本 >=${MIN_SAMPLE} 的 ${kept.length} 个`);
 console.log("占比最极端的前几个（大 ASN）：");
 for (const [asn, g] of kept.slice(0, 10)) {
   console.log(`  AS${String(asn).padEnd(7)} ${String(g.isp).padStart(3)}/${String(g.n).padStart(3)} = ${(100 * g.isp / g.n).toFixed(0)}%  ${g.name.slice(0, 40)}`);

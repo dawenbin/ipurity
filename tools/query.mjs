@@ -1,7 +1,7 @@
 /*
  * 命令行查询：直接对数据包做分级，用来快速复查某个模式
  *   node tools/query.mjs "130.*.253.66" "198.*.42.81" --city "San Francisco" --top 5
- * 实测样本里没有的段会自动落到全球段表（全量 ASN 段表 + 城市片），任意 IPv4 都能查。
+ * 实测记录里没有的段会自动落到IP 归属表（全量 ASN 段表 + 城市片），任意 IPv4 都能查。
  */
 import { readFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -15,7 +15,7 @@ const World = require(join(root, "assets", "sources.js"));
 const City = require(join(root, "assets", "city.js"));
 const data = JSON.parse(readFileSync(join(root, "data", "segments-data.json"), "utf8"));
 
-/* ---- 全球段表：段表 + ASN 元数据 + 标定（缺哪个就少一层能力，不报错） ---- */
+/* ---- IP 归属表：段表 + ASN 元数据 + 标定（缺哪个就少一层能力，不报错） ---- */
 const grab = (file, name) => {
   const p = join(root, "data", file);
   if (!existsSync(p)) { return null; }
@@ -54,7 +54,7 @@ for (let i = 0; i < argv.length; i++) {
 
 if (!inputs.length) {
   console.log('用法: node tools/query.mjs "198.*.42.81" [更多模式] [--top 5] [--online]');
-  console.log('  城市名一律城市库原文（DB-IP 的英文名，不做本地化）');
+  console.log('  城市名一律城市数据原文（DB-IP 的英文名，不做本地化）');
   console.log('  --online  联网核验：抽样几个 IP 问 ipwho.is / ip-api，把「ASN 里的机房段」挑出来');
   process.exit(1);
 }
@@ -85,8 +85,8 @@ for (const p of patterns) {
     Core.applyOnline(r, v);
   }
   console.log(`${p}\n  ${r.tier} 级${r.approx ? "（估算）" : ""} · ${r.tierText}` +
-    `  [${r.source || "实测样本"}]` +
-    /* 全球段表给的是概率加权，不是实测计数：写成 ≈90% 而不是 229/254 */
+    `  [${r.source || "实测记录"}]` +
+    /* IP 归属表给的是概率加权，不是实测计数：写成 ≈90% 而不是 229/254 */
     (r.probOnly
       ? `  住宅概率（ASN 级） ≈${r.pctIsp}%` + (r.singleHost ? "" : `（按 ${r.sampled} 个地址加权）`)
       : `  ${r.hostRange ? "住宅主机" : "住宅 /24"} ${r.counts[1]}/${r.sampled} (${r.pctIsp}%)`) +
@@ -106,7 +106,7 @@ for (const p of patterns) {
   if (r.source === "全球ASN") {
     const asns = Object.entries(r.asnHist).sort((a, b) => b[1] - a[1]).slice(0, 3)
       .map(([a, n]) => `AS${a}×${n} ${(World.byNumber(a) || {}).name || ""}`.trim());
-    console.log(`  全球段表 ASN：${asns.join("  |  ")}`);
+    console.log(`  IP 归属表 ASN：${asns.join("  |  ")}`);
     if (r.cityTop && r.cityTop.length) {
       console.log(`  城市分布：${r.cityTop.slice(0, 5).map((c) => `${Core.cityLabel(c.city)}×${c.count}`).join(" · ")}`);
     }

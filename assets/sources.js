@@ -1,15 +1,15 @@
 /*
- * sources.js —— 全球段表的数据接口（浏览器/node 通用，零依赖）
+ * sources.js —— IP 归属表的数据接口（浏览器/node 通用，零依赖）
  *
  * 三样东西合起来才能对“任意 IPv4”回答：
  *   1. data/global-pack.bin  IPPACK01：53.8 万段「起点 u32 + ASN 索引 u32」，二分查到任意 IP 的 ASN
  *      （iptoasn.com 每日更新，0 处不连续 = 段内无缝；覆盖 1.0.0.0–223.255.254.255，
  *      占地址空间 87.1%，224.0.0.0 起是组播/保留段，不在段表内 → 查到返回 0）
  *   2. data/global-asn.js    ASN → [号码, 类型, 国家, 名称]，类型由 名称关键词 + PeeringDB info_type + bad-asn-list 得出
- *   3. data/asn-calib.js     我们实测样本过的 /24 反推的「该 ASN 住宅占比」，用来压掉大型混合 ASN 的虚高
+ *   3. data/asn-calib.js     我们实测记录过的 /24 反推的「该 ASN 住宅占比」，用来压掉大型混合 ASN 的虚高
  *
  * 注意：ASN 层的结论是**估算**（同一个 ASN 里既有住宅池也有企业段）。实测数据在
- * core.analyze() 里优先，全球段表只做兜底，行上会标 source='全球ASN'。
+ * core.analyze() 里优先，IP 归属表只做兜底，行上会标 source='全球ASN'。
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) { module.exports = factory(); }
@@ -116,7 +116,7 @@
   function probOfNumber(asn) { var e = byNumber(asn); return e ? prob(e) : 0; }
 
   /* 概率：这个 IP 属于“住宅池”的可能性 0..1
-     标定过的 ASN → 用实测样本的占比（平滑后），这是压掉大型混合 ASN 虚高的关键；
+     标定过的 ASN → 用实测记录的占比（平滑后），这是压掉大型混合 ASN 虚高的关键；
      没标定的 → 只认“关键词/PeeringDB 判为零售 ISP”这一档，注意这是**上限**（见 README）。 */
   function prob(entry) {
     if (!entry) { return 0; }
@@ -205,7 +205,7 @@
       .catch(function () { return false; });
   }
 
-  /* 段落占用地址量 → 各住宅/机房等占比（页面顶部显示“全球段表覆盖”用）
+  /* 段落占用地址量 → 各住宅/机房等占比（页面顶部显示“IP 归属表覆盖”用）
      占比的分母是**段表覆盖到的地址量**，covered 是它占整个 IPv4 空间的百分比 */
   function coverage() {
     if (!starts) { return null; }

@@ -21,13 +21,13 @@
     return I && I.t ? I.t(s) : s;
   }
 
-  /* 全球段表是 ASN 级估算：同一个 ASN 内部一定有例外段（对方机房的客户、企业专线），
+  /* IP 归属表是 ASN 级估算：同一个 ASN 内部一定有例外段（对方机房的客户、企业专线），
      所以抽样再干净也不给「100% 住宅」这种说法，占比封顶 90%，行上标 approx。
      典型翻车例子：177.202.126.0/24 挂在 AS4766（Korea Telecom）下，整段其实是
      「Ace Data Centers II, LLC」的机房段 —— 光看 ASN 只会判成住宅。 */
   var ASN_CONF_CAP = 0.9;
   var LA_BIT = 8;
-  /* 第 4 段打码（82.24.73.*）= 这个 /24 的可用主机地址 1–254
+  /* 第 4 段打码（82.24.73.*）= 这个网段的可用主机地址 1–254
      （.0 是网络地址、.255 是广播地址，都不是能拿的主机） */
   var HOST_LO = 1, HOST_HI = 254;
   var TOKEN = /^(\d{1,3}|\*)(?:\.(\d{1,3}|\*)){3}$/;
@@ -101,7 +101,7 @@
           continue;
         }
         /* 粒度统一到 /24（跟打码位一样）：一个 CIDR 展开成它覆盖的那些 /24，
-           /16 → 256 个，/20 → 16 个，/24 及更长（都落在同一个 /24 里）→ 1 个。
+           /16 → 256 个，/20 → 16 个，/24 及更长（都落在同一个网段里）→ 1 个。
            地址按无符号 32 位算，第 4 段落在哪都不影响 /24 —— 不做 o3+1 那种进位。 */
         var base = ((o1 << 24) | (o2 << 16) | (o3 << 8)) >>> 0;
         n = bits >= 24 ? 1 : Math.min(Math.pow(2, 24 - bits), 256);
@@ -163,8 +163,8 @@
       res.counts[base]++;
     }
     res.sampled = hi - lo + 1;
-    /* 第 4 段打码：这一段是「这个 /24 的 254 个可用地址」。
-       实测数据本身是 /24 粒度，同一个 /24 里 254 个主机同类，所以样本数按 254 算。 */
+    /* 第 4 段打码：这一段是「这个网段的 254 个可用地址」。
+       实测数据本身是 /24 粒度，同一个网段里 254 个主机同类，所以样本数按 254 算。 */
     if (res.starPos === 3) {
       var cat3 = (+codes[o2] || 0) & 7;
       if (res.counts[cat3] === undefined) { cat3 = 6; }
@@ -219,7 +219,7 @@
     return res;
   }
 
-  /* 单行判定：实测数据优先；这里没有这个 /24 时交给全球段表（任意 IPv4 都能回答）。
+  /* 单行判定：实测数据优先；这里没有这个网段时交给 IP 归属表（任意 IPv4 都能回答）。
      单独抽出来是给页面用的 —— 页面要按帧分批算，中间好把进度画出来（analyzeMany 是一口气算完）。 */
   function analyzeItem(item, data, opts) {
     opts = opts || {};
@@ -250,7 +250,7 @@
     return { rows: rows, counts: countRows(rows) };
   }
 
-  /* ---------- 3c. 每行的「国家」：优先城市片（DB-IP 定位国），没加载时退回全球段表的 ASN 注册国 ----------
+  /* ---------- 3c. 每行的「国家」：优先城市数据（DB-IP 定位国），没加载时退回 IP 归属表的 ASN 注册国 ----------
      打码行把 256（或 254）个取值逐个定位后取最多的那个；单个真实 IP 就只有它自己。
      两个来源在悬停里写清楚，免得把「ASN 注册国」当成「IP 所在地」。 */
   function countryHist(r, opts) {
@@ -289,11 +289,11 @@
       kinds: top.length,
       second: top[1] ? top[1].cc : "",
       viaCity: viaCity, viaAsn: viaAsn, miss: miss,
-      src: viaCity >= viaAsn ? "按 IP 定位 · 城市库 DB-IP" : "按 ASN 注册地 · 全球段表"
+      src: viaCity >= viaAsn ? "按 IP 定位 · 城市数据 DB-IP" : "按 ASN 注册地 · IP 归属表"
     };
   }
 
-  /* ---------- 3d. 每行的「城市」：和「国家」同一套规则（城市片优先，其次实测样本） ----------
+  /* ---------- 3d. 每行的「城市」：和「国家」同一套规则（城市数据优先，其次实测记录） ----------
      打码行取枚举取值里最多的那个城市（悬停里给占比），单个真实 IP 就取它自己。
      查不到就返回 null，UI 写「—」—— 不猜。 */
   function cityHist(r, opts) {
@@ -307,7 +307,7 @@
     if (r.starPos === 3) { from = HOST_LO; to = HOST_HI; }
     else if (r.starPos < 0) { from = to = +parts[3]; }
     else { from = 0; to = 255; }
-    /* 实测样本的兜底：同一次扫描给每个 /24 都记了城市，不用再下城市片 */
+    /* 实测记录的兜底：同一次扫描给每个网段都记了城市，不用再下城市数据 */
     var packCities = null;
     if (data && data.prefixes && r.key && data.prefixes[r.key]) {
       packCities = String(data.prefixes[r.key].g).split(",");
@@ -336,12 +336,12 @@
       kinds: top.length, second: top[1] ? top[1].city : "",
       viaSlice: viaSlice, viaPack: viaPack, covered: covered,
       /* 单个真实 IP 只有它自己一个取值，谈不上「取最多」—— 和国家那一列用同一句话 */
-      src: r.singleHost ? "按 IP 定位 · 城市库 DB-IP"
-        : (viaSlice >= viaPack ? "逐值定位取最多 · 城市库 DB-IP" : "取自扫描记录 · 实测样本")
+      src: r.singleHost ? "按 IP 定位 · 城市数据 DB-IP"
+        : (viaSlice >= viaPack ? "逐值定位取最多 · 城市数据 DB-IP" : "取自扫描记录 · 实测记录")
     };
   }
 
-  /* ---------- 3b. 全球段表判定：查不到实测数据时的兜底，靠“任意 IP → ASN”的段表 + 城市片 ----------
+  /* ---------- 3b. IP 归属表判定：查不到实测数据时的兜底，靠“任意 IP → ASN”的段表 + 城市数据 ----------
      打码位同样要把 256 种取值枚举完，但结论仍然落回整行。
      ASN 层是估算：同一 ASN 内既有住宅池也有企业段，所以出的级别标 approx，行上标 source。 */
   function analyzeGlobal(pattern, opts) {
@@ -353,7 +353,7 @@
       pctIsp: 0, dcHeavy: false, candidates: [], laCount: 0,
       host24: null, source: "全球ASN", approx: true, asnHist: {}, homeShare: 0
     };
-    if (!world || !world.ready || !world.ready()) { res.reason = "全球段表未加载"; return res; }
+    if (!world || !world.ready || !world.ready()) { res.reason = "IP 归属表没加载"; return res; }
 
     var parts = String(pattern).split(".");
     if (parts.length !== 4) { res.reason = "不是 4 段格式"; return res; }
@@ -402,23 +402,23 @@
         else if (p0 > 0) { cat = CAT.DC; }
       }
       res.tier = cat === CAT.ISP ? "A" : cat === CAT.DC ? "D" : cat === CAT.MOB ? "B" : cat === CAT.BIZ ? "C" : "X";
-      res.tierText = cat === CAT.ISP ? "住宅为主（全球段表估算）"
-        : cat === CAT.DC ? "机房/机构为主（全球段表估算）"
-          : cat === CAT.MOB ? "移动网络（全球段表）"
-            : cat === CAT.BIZ ? "商业/机构为主（全球段表估算）" : "未知（全球段表）";
+      res.tierText = cat === CAT.ISP ? "住宅为主（按运营商估算）"
+        : cat === CAT.DC ? "机房/机构为主（按运营商估算）"
+          : cat === CAT.MOB ? "移动网络（按运营商）"
+            : cat === CAT.BIZ ? "商业/机构为主（按运营商估算）" : "未知（按运营商）";
       res.dcHeavy = cat === CAT.DC;
       res.host24.cat = cat;
       res.pctIsp = Math.round(100 * p0);
       res.counts[1] = Math.round(p0);
       res.homeShare = p0;
-      /* 单个 IP 在全球段表给的是「这个 ASN 的住宅概率」，不是采样计数，UI 要按概率显示 */
+      /* 单个 IP 在 IP 归属表给的是「这个 ASN 的住宅概率」，不是采样计数，UI 要按概率显示 */
       res.probOnly = true;
       res.ok = true;
       return res;
     }
 
     /* 打码行：枚举取值逐个查 ASN + 城市，再按占比定级。
-       第 4 段打码 → 只枚举这个 /24 的可用主机 1–254（.0 网络地址 / .255 广播地址跳过）；
+       第 4 段打码 → 只枚举这个网段的可用主机 1–254（.0 网络地址 / .255 广播地址跳过）；
        第 2/3 段打码 → 0–255 全覆盖（那是网段维度，不是主机维度）。 */
     var from = res.starPos === 3 ? HOST_LO : 0;
     var to = res.starPos === 3 ? HOST_HI : 255;
@@ -459,14 +459,14 @@
     res.homeShare = Math.min(sumP / span, ASN_CONF_CAP);
     res.counts[1] = Math.round(sumP);
     res.pctIsp = Math.round(100 * res.homeShare);
-    /* 全球段表的「住宅个数」是概率加权出来的（254 个地址 × 0.9），不是实测计数，
+    /* IP 归属表的「住宅个数」是概率加权出来的（254 个地址 × 0.9），不是实测计数，
        UI 要按概率显示，别写成「229/254」 */
     res.probOnly = true;
     var share = res.homeShare;
-    if (share >= 0.586) { res.tier = "A"; res.tierText = "住宅为主（全球段表估算）"; }
-    else if (share >= 0.234) { res.tier = "B"; res.tierText = "住宅+商业混合（全球段表估算）"; }
-    else if (share >= 0.078) { res.tier = "C"; res.tierText = "商业/机构为主（全球段表估算）"; }
-    else { res.tier = "D"; res.tierText = "机房/机构为主（全球段表估算）"; }
+    if (share >= 0.586) { res.tier = "A"; res.tierText = "住宅为主（按运营商估算）"; }
+    else if (share >= 0.234) { res.tier = "B"; res.tierText = "住宅+商业混合（按运营商估算）"; }
+    else if (share >= 0.078) { res.tier = "C"; res.tierText = "商业/机构为主（按运营商估算）"; }
+    else { res.tier = "D"; res.tierText = "机房/机构为主（按运营商估算）"; }
     res.dcHeavy = res.counts[2] >= 150;
     res.hardIsp = hardIsp;
     res.ok = true;
@@ -476,7 +476,7 @@
   function _catName(c) { return CAT_NAME[c]; }
 
   /* ---------- 3c. 联网核验结果盖到行上（可选，默认不联网） ----------
-     全球段表只认得 ASN，认不出「ASN 里的机房客户段」。联网核验拿接口返回的
+     IP 归属表只认得 ASN，认不出「ASN 里的机房客户段」。联网核验拿接口返回的
      org/isp/托管标记把这种段挑出来：只要抽样里有一个是机房，整行改判 D。 */
   function applyOnline(res, online) {
     if (!res || !online) { return res; }
@@ -534,7 +534,7 @@
   var TIER_BONUS = { A: 60, B: 30, C: 10, D: 0, X: 0 };
 
   /* 0–100 的质量分。级别占大头（A 60 / B 30 / C 10 / D 0），住宅占比 30 分，
-     机房占比扣 10 分，另外全球段表估算（上限）扣 5 分 —— 跟级别排序保持一致，不会出现
+     机房占比扣 10 分，另外 IP 归属表估算（上限）扣 5 分 —— 跟级别排序保持一致，不会出现
      “排名靠后分数反而高”的怪事。 */
   function rowScore(r) {
     if (!r || !r.ok) { return 0; }
@@ -551,7 +551,7 @@
   function scoreBand(n) { return n >= 75 ? "g" : n >= 50 ? "o" : n >= 25 ? "b" : "d"; }
 
   /* ---------- 构成条的宽度：表格里的小条和详情里的大条共用同一个算法 ----------
-     实测样本按计数画；全球段表那一段是概率加权值（counts[1] 已折算过），其余类别按剩余宽度缩放，
+     实测记录按计数画；IP 归属表那一段是概率加权值（counts[1] 已折算过），其余类别按剩余宽度缩放，
      免得出现「条子 20% 绿、数字写 ≈90%」这种自相矛盾。 */
   function shareWidths(r) {
     var c = (r && r.counts) || {}, sampled = (r && r.sampled) || 1, w = {};
@@ -561,16 +561,16 @@
       var restW = Math.max(0, 100 - Math.round(100 * (c[1] || 0) / sampled));
       w[1] = Math.round(100 * (c[1] || 0) / sampled);
       [2, 3, 4, 6].forEach(function (k) { w[k] = restSum > 0 ? Math.round(restW * (c[k] || 0) / restSum) : 0; });
-      /* 全球段表只看得到 ASN（住宅占比还封顶 90%）：剩下那一截是「看不出来」，
+      /* IP 归属表只看得到 ASN（住宅占比还封顶 90%）：剩下那一截是「看不出来」，
          单独画成灰色的未知段 —— 不是没颜色的空白，也不写「其他/不明」（那等于替它下了结论）。 */
       w.unk = Math.max(0, 100 - w[1] - w[2] - w[3] - w[4] - w[6]);
     } else {
       [1, 2, 3, 4, 6].forEach(function (k) { w[k] = Math.round(100 * (c[k] || 0) / sampled); });
-      w.unk = 0;   /* 实测样本：每个取值都有类别，没有看不出来的部分 */
+      w.unk = 0;   /* 实测记录：每个取值都有类别，没有看不出来的部分 */
     }
     return w;
   }
-  /* 某一类在这一行里的个数文案：全球段表的住宅是折算值，带 ≈（别让人当成实测计数） */
+  /* 某一类在这一行里的个数文案：IP 归属表的住宅是折算值，带 ≈（别让人当成实测计数） */
   function catCount(r, k) {
     if (r && r.probOnly && k === 1) { return "≈" + homeNum(r); }
     return String(Math.round(((r && r.counts ? r.counts[k] : 0) || 0)));
@@ -580,9 +580,9 @@
   function shareBand(p) { return p >= 58 ? "g" : p >= 23 ? "o" : p > 0 ? "b" : "d"; }
 
   /* ---------- 「住宅」那一格的唯一出处（表格 / 详情 / 报告 / CSV 共用） ----------
-     - 打码行（样本 = 256 个 /24 或 254 个主机）：`[≈]住宅数/样本数 · 占比%`
+     - 打码行（样本 = 256 个网段或 254 个主机）：`[≈]住宅数/样本数 · 占比%`
      - 单个真实 IP：样本只有它自己，谈占比没意义 → 直接写它属于哪一类
-     - ≈ 的含义：这个数不是一个个数出来的，是按 ASN 住宅先验折算的（全球段表） */
+     - ≈ 的含义：这个数不是一个个数出来的，是按 ASN 住宅先验折算的（按运营商） */
   function homePct(r) {
     var den = (r && r.sampled) || 1;
     if (r && r.pctIsp != null) { return r.pctIsp; }
@@ -624,12 +624,12 @@
     var p = String(pattern).split(".");
     if (p.length !== 4) { return pattern; }
     if (p.indexOf("*") < 0) { return p[0] + "." + p[1] + "." + p[2] + ".0/24"; }   // 单个真实 IP
-    if (p[3] === "*") { return p[0] + "." + p[1] + "." + p[2] + ".0/24"; }   // 打码在第 4 段 = 这个 /24 的 1–254
+    if (p[3] === "*") { return p[0] + "." + p[1] + "." + p[2] + ".0/24"; }   // 打码在第 4 段 = 这个网段的 1–254
     if (p[2] === "*") { return p[0] + "." + p[1] + ".*.0/24"; }
     return p[0] + ".*." + p[2] + ".0/24";
   }
 
-  /* 实测数据包是按 o1.*.o3 收录的：给出这个模式下要查的键（查不到就得走全球段表） */
+  /* 实测数据包是按 o1.*.o3 收录的：给出这个模式下要查的键（查不到就得走 IP 归属表） */
   function patternKey(pattern) {
     var p = String(pattern).split(".");
     if (p.length !== 4 || p[0] === "*") { return ""; }
@@ -653,7 +653,7 @@
       out.push([
         r.rank || r.index, r.pattern, csvCell(cityLabel(r.city ? r.city.city : "")),
         r.country ? r.country.cc : "", r.tier, T(r.tierText),
-        r.source || T("实测样本"), r.score,
+        r.source || T("实测记录"), r.score,
         csvCell(homeTxt(r)), homePct(r),
         pct(r.counts[2], n), pct(r.counts[3], n), pct(r.counts[4], n),
         maskedNetwork(r.pattern), csvCell(picks)

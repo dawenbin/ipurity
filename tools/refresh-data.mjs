@@ -1,7 +1,7 @@
 /*
  * tools/refresh-data.mjs —— 数据自动刷新（给 GitHub Actions 用；本地也能跑）
  *
- *   node tools/refresh-data.mjs --asn      # iptoasn + PeeringDB + bad-asn-list → 全球段表 → 重算标定
+ *   node tools/refresh-data.mjs --asn      # iptoasn + PeeringDB + bad-asn-list → IP 归属表 → 重算标定
  *   node tools/refresh-data.mjs --city     # DB-IP City Lite → 220 个城市片
  *   node tools/refresh-data.mjs --asn --dry   # 只比对指纹，不下载、不打包、不改文件
  *

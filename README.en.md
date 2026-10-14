@@ -28,22 +28,22 @@ residential share:
 | **C** | mostly business and institutional | 7.8% – 23.3% |
 | **D** | mostly datacenter and institutional | < 7.8% |
 
-A tier marked `est.` is inferred from the global ASN table and is an upper bound only: that table cannot see
+A tier marked `est.` is inferred from the IP owner table and is an upper bound only: that table cannot see
 the datacenter ranges rented out inside a large carrier, so the residential share is capped at 90%. The full
 criteria, the calibration, and what online IP lookup sites actually report are in
 [Scoring rules](docs/judging-criteria.md) (Chinese).
 
-It answers one question: given a list of IP ranges, which ones to try first. If your IPs are all datacenter,
-or you only want the city a single IP sits in, it will not help you.
+It answers one question: which of these IP ranges are residential. If your IPs are all datacenter, or you only
+want the city a single IP sits in, it will not help you.
 
 ## Data sources
 
 | Data | Source | Coverage | Refresh |
 | :-- | :-- | :-- | :-- |
-| **Measured sample** | ip-api.com free endpoint, one look-up per range | 53 groups, 13,568 ranges | manual |
-| **Global ASN table** | iptoasn + PeeringDB + bad-asn-list | 539k ranges, every routable address | daily |
-| **City DB** | DB-IP City Lite (CC BY 4.0) | 3.62M ranges, 33 MB, loaded slice by slice as needed | monthly |
-| **Calibration** | residential share per ASN, inferred from the measured sample | 291 ASNs | with the global ASN table |
+| **Measured records** | ip-api.com free endpoint, one look-up per range | 53 groups, 13,568 ranges | manual |
+| **IP owner table** | iptoasn + PeeringDB + bad-asn-list | 539k entries, every in-use IP | daily |
+| **City data** | DB-IP City Lite (CC BY 4.0) | 3.62M entries, 33 MB, loaded file by file as needed | monthly |
+| **Calibration** | residential share per ASN, inferred from the measured records | 291 ASNs | with the IP owner table |
 
 The data files ship with the repository (see `data/`). The scheduled jobs in `.github/workflows/` refresh the
 ASN layer daily and the city layer monthly, and commit only once the upstream data has actually changed and the
