@@ -4,7 +4,7 @@
 
 # IPurity
 
-### No cleanup needed. Paste any IP list, scored in seconds.
+**No cleanup needed. Paste any IP list, scored in seconds.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-111111)](LICENSE) ![Static](https://img.shields.io/badge/static-no%20backend-111111) ![Tracking](https://img.shields.io/badge/tracking-none-111111) ![UI](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%7C%20English-111111)
 
@@ -16,25 +16,25 @@
 
 ## How grading works
 
-The tool only reads IPs. Country, city and notes in your list are ignored: country and city are looked up by
-the tool itself. A row with `*` is expanded into 256 candidate ranges (254 when the `*` is in the 4th octet),
-each one is classified as residential, company or datacenter, and the whole row is then placed in one of four
-tiers by its residential share:
+The tool only reads IPs: country, city and notes in your list are ignored, and country and city are looked up by
+the tool itself. A row with `*` is expanded into 256 ranges (254 when the `*` is in the 4th octet), each one is
+classified as residential, company or datacenter, and the whole row is then placed in one of four tiers by its
+residential share:
 
-| Tier | Meaning | Residential share of the row |
+| Tier | Meaning | Residential share |
 | :-- | :-- | :-- |
 | **A** | mostly residential | ≥ 58.6% |
 | **B** | residential and business | 23.4% – 58.5% |
 | **C** | mostly business and institutional | 7.8% – 23.3% |
 | **D** | mostly datacenter and institutional | < 7.8% |
 
-A tier marked `est.` is inferred from the global ASN table, so it is an upper bound only: that table cannot
-see the datacenter ranges rented out inside a large carrier, and the residential share is capped at 90%. The
-full criteria, the calibration, and what online IP lookup sites actually report are in
+A tier marked `est.` is inferred from the global ASN table and is an upper bound only: that table cannot see
+the datacenter ranges rented out inside a large carrier, so the residential share is capped at 90%. The full
+criteria, the calibration, and what online IP lookup sites actually report are in
 [Scoring rules](docs/judging-criteria.md) (Chinese).
 
-It answers one question: given a list of IP ranges, which ones should you try first. If your IPs are all
-datacenter, or you only want the city a single IP sits in, this tool will not help you.
+It answers one question: given a list of IP ranges, which ones to try first. If your IPs are all datacenter,
+or you only want the city a single IP sits in, it will not help you.
 
 ## Data sources
 
@@ -42,20 +42,20 @@ datacenter, or you only want the city a single IP sits in, this tool will not he
 | :-- | :-- | :-- | :-- |
 | **Measured sample** | ip-api.com free endpoint, one look-up per range | 53 groups, 13,568 ranges | manual |
 | **Global ASN table** | iptoasn + PeeringDB + bad-asn-list | 539k ranges, every routable address | daily |
-| **City DB** | DB-IP City Lite (CC BY 4.0) | 3.62M ranges, loaded slice by slice as needed, 33 MB | monthly |
+| **City DB** | DB-IP City Lite (CC BY 4.0) | 3.62M ranges, 33 MB, loaded slice by slice as needed | monthly |
 | **Calibration** | residential share per ASN, inferred from the measured sample | 291 ASNs | with the global ASN table |
 
 The data files ship with the repository (see `data/`). The scheduled jobs in `.github/workflows/` refresh the
-ASN layer daily and the city layer monthly, and only commit after the self-checks pass and the upstream data
-has actually changed. Manual commands and file formats are in [Data pipeline](docs/data-pipeline.md) (Chinese).
+ASN layer daily and the city layer monthly, and commit only once the upstream data has actually changed and the
+self-checks pass. Manual commands and file formats are in [Data pipeline](docs/data-pipeline.md) (Chinese).
 
 ## Privacy
 
 Nothing you paste is uploaded. Grading runs entirely in your browser and only reads this site's own data files:
 there is no backend, no analytics and no cookies, and what you paste stays in your browser's localStorage.
 
-Requests are sent only when you click the online check or the verdict report, and only for the few sampled IPs
-rather than the whole list. The sites involved are `ipwho.is`, `ip-api.com`, `rdap.org`, Cloudflare's and
+Requests go out only when you click **Online check** or **Run live lookup**, and only for a few sampled IPs,
+never for the whole list. The sites involved are `ipwho.is`, `ip-api.com`, `rdap.org`, Cloudflare's and
 Google's DoH (for PTR and Team Cymru lookups), `stat.ripe.net` and `internetdb.shodan.io`. Anything a source
 does not answer is recorded as “not retrieved” rather than guessed. Flag icons come from `flagcdn.com`, and
 those requests carry no referrer.
