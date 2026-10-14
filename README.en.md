@@ -90,8 +90,4 @@ If this tool is useful to you, [a ⭐](https://github.com/dawenbin/ipurity) help
 
 ## License
 
-The code is licensed under [Apache-2.0](LICENSE). The `iPurity` name and icon (including `favicon.ico`) are not
-covered by that licence — fork it, change it, ship it, but under a different name and icon.
-
-Third-party data sources and attribution are listed in [NOTICE](NOTICE); the city data comes from DB-IP
-(CC BY 4.0), so keep the attribution when redistributing.
+Licensed under [Apache-2.0](LICENSE). Third-party data sources and attribution are listed in [NOTICE](NOTICE); the city data comes from DB-IP (CC BY 4.0), so keep the attribution when redistributing.
