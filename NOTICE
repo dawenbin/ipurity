@@ -1,0 +1,38 @@
+IPurity · 住宅 IP 纯净度分级
+Copyright 2026 The IPurity Authors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes data derived from the third-party sources listed below.
+Attribution and license terms of those sources apply to the included data.
+
+1. 实测样本 — data/segments-data.js, data/segments-data.json
+   Source: ip-api.com free endpoint (https://ip-api.com/)
+   NOTE: the free endpoint is for non-commercial use only. Commercial use of
+   these files requires replacing this source (e.g. IPinfo / MaxMind paid data)
+   or rescanning with an offline database (DB-IP / MaxMind GeoLite2).
+
+2. IPv4 → ASN 段表 — data/global-pack.bin
+   Source: iptoasn.com (https://iptoasn.com/) — public domain data.
+
+3. ASN 运营类型 — data/global-asn.js（类型字段）
+   Source: PeeringDB info_type (https://www.peeringdb.com/) — CC BY 4.0.
+
+4. 机房 / VPN ASN 名单
+   Source: bad-asn-list (https://github.com/ipapi-is/ipapi)
+
+5. 城市数据 — data/city/*.bin
+   Source: DB-IP City Lite (https://db-ip.com/) — CC BY 4.0.
+   Contains data from DB-IP, licensed under CC BY 4.0. Attribution is required:
+   "IP Geolocation by DB-IP (https://db-ip.com)".
+
+6. 可选联网核验（仅在用户点击时请求，不随本产品分发）
+   ipwho.is (https://ipwho.is/), ip-api.com (https://ip-api.com/)
+
+7. 可选实测取证（仅在用户点击时请求，不随本产品分发）
+   RDAP: rdap.org and the RIRs; DNS over HTTPS: Cloudflare (https://cloudflare-dns.com/)
+   and Google (https://dns.google/); BGP data via Team Cymru (whois.cymru.com) and
+   RIPEstat / RIS (https://stat.ripe.net/); host scan data via Shodan InternetDB
+   (https://internetdb.shodan.io/).
+
+8. 国旗图片 — flagcdn.com (https://flagcdn.com/)（页面运行时加载）

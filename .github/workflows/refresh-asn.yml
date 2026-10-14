@@ -1,0 +1,58 @@
+# 每天刷新 ASN 层：iptoasn（每天更新）+ PeeringDB + bad-asn-list
+#   → data/global-pack.bin / data/global-asn.js → data/asn-calib.js（用已精扫 /24 反推住宅占比）
+#
+# 只有数据指纹真的变了才提交（见 tools/refresh-data.mjs：产物里的 generated 时间戳先抹掉再比对），
+# 没变就还原、连构建戳都不动 —— 否则每天白触发一次 Pages 重建，还把城市片的 CDN 缓存打失效。
+# 提交 push 之后，Cloudflare Pages 的 Git 集成照常自动发布（GITHUB_TOKEN 只限制 Actions 自己的 on:push）。
+
+name: refresh ASN data
+
+on:
+  schedule:
+    - cron: "17 3 * * *"          # 每天 03:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 拉数据源 → 打包段表 → 重算标定
+        id: refresh
+        run: node tools/refresh-data.mjs --asn
+
+      - name: 数据自检（测试全绿才提交）
+        if: steps.refresh.outputs.changed == 'true'
+        run: node test/run-all.mjs
+
+      - name: 提交并推送
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          git config user.name "ipurity-bot"
+          git config user.email "ipurity-bot@users.noreply.github.com"
+          git add -A data index.html
+          git commit -m "data: 刷新 ASN 层（iptoasn/PeeringDB/bad-asn-list）+ 重算标定"
+          # 别人（我自己）刚好也在推 main 时 push 会被拒，先 rebase 再推，最多试 3 次
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || exit 1
+            if git push; then pushed=1; break; fi
+            echo "第 $i 次推送被拒，15 秒后重试"; sleep 15
+          done
+          test -n "$pushed"
+
+      - name: 数据没变化
+        if: steps.refresh.outputs.changed != 'true'
+        run: echo "上游与本仓库内容一致，未提交。" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,57 @@
+# 每月刷新城市层：DB-IP City Lite（CC BY 4.0，按月发布）→ data/city/*.bin（220 个 /8 片，约 33 MB）
+#
+# 为什么不每天跑：这个源 86 MB、产物 33 MB，而它一个月才更新一次；每天跑纯属浪费流量，
+# 而且每次提交都会换构建戳、把 33 MB 城市片的 CDN 缓存全部打失效。
+# 只在指纹变了才提交，理由与 refresh-asn.yml 相同（见 tools/refresh-data.mjs）。
+
+name: refresh city data
+
+on:
+  schedule:
+    - cron: "41 4 5 * *"          # 每月 5 号 04:41 UTC（月初没放当月版时脚本会自动退到上月）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 下载 DB-IP → 切 220 个城市片
+        id: refresh
+        run: node tools/refresh-data.mjs --city
+
+      - name: 数据自检（测试全绿才提交）
+        if: steps.refresh.outputs.changed == 'true'
+        run: node test/run-all.mjs
+
+      - name: 提交并推送
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          git config user.name "ipurity-bot"
+          git config user.email "ipurity-bot@users.noreply.github.com"
+          git add -A data index.html
+          git commit -m "data: 刷新城市层（DB-IP City Lite 当月版）"
+          # 别人（我自己）刚好也在推 main 时 push 会被拒，先 rebase 再推，最多试 3 次
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || exit 1
+            if git push; then pushed=1; break; fi
+            echo "第 $i 次推送被拒，15 秒后重试"; sleep 15
+          done
+          test -n "$pushed"
+
+      - name: 数据没变化
+        if: steps.refresh.outputs.changed != 'true'
+        run: echo "上游与本仓库内容一致，未提交。" >> "$GITHUB_STEP_SUMMARY"

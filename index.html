@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- build 戳：静态托管的 CDN 会缓存 js/数据包，改完资源就把它改一下，
+     脚本 src 与 ?v= 都指向它，避免「新 HTML + 旧 JS」这种半新半旧的状态 -->
+<meta name="build" content="20261014af">
+<title>IPurity · 住宅 IP 纯净度分级</title>
+<meta name="description" content="IPurity · 批量甄别 IP 段的住宅纯净度：整表直粘 → 打码位自动展开 → 按段分级排序，告诉你该拿哪一段。纯静态、本地计算。">
+<!-- 图标：SVG 优先（任意尺寸都清晰），.ico / PNG 兜底给不认 SVG 图标的浏览器与 iOS 主屏 -->
+<link rel="icon" href="favicon.ico?v=20261014af" sizes="32x32 48x48">
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg?v=20261014af" sizes="any">
+<link rel="apple-touch-icon" href="assets/icon-180.png?v=20261014af">
+<style>
+  :root{
+    --paper:#f5f2ec; --panel:#fffdf8; --ink:#14161a; --muted:#6a7080;
+    --rule:#ded7c9; --rule-soft:#ece6da;
+    --field:#fffefb; --onink:#fffdf8;            /* 输入面 / 深色底上的文字 */
+    /* 中性透明度阶：页面里所有 rgba(20,22,26,x) 都从这里取，不再裸写 */
+    --ink-02:rgba(20,22,26,.022); --ink-03:rgba(20,22,26,.035); --ink-05:rgba(20,22,26,.05);
+    --ink-10:rgba(20,22,26,.10); --ink-14:rgba(20,22,26,.14); --ink-18:rgba(20,22,26,.18);
+    --ink-28:rgba(20,22,26,.28); --ink-50:rgba(20,22,26,.50);
+    /* 全站只有这 5 个语义色，级别 / 构成 / 得分共用一套含义：
+       绿 = 住宅·好 · 橙 = 移动·中等 · 蓝灰 = 商业/机构 · 红 = 机房·差 · 米 = 未知/没数据
+       （--isp/--dc/--biz/--mob 是同一批色在构成条里的叫法） */
+    --a:#0f766e; --b:#b45309; --c:#3f5673; --d:#b3261e;
+    --isp:var(--a); --dc:var(--d); --biz:var(--c); --mob:var(--b); --unk:#c9c3b6; --la:#1b64d8;
+    /* 每个语义色的描边 / 淡底 / 悬停底：药丸、左边条、选中行统一用这几档 */
+    --a-line:rgba(15,118,110,.45); --b-line:rgba(180,83,9,.45);
+    --c-line:rgba(63,86,115,.45);  --d-line:rgba(179,38,30,.45);
+    --a-tint:rgba(15,118,110,.09); --b-tint:rgba(180,83,9,.09);
+    --c-tint:rgba(63,86,115,.09);  --d-tint:rgba(179,38,30,.09);
+    --a-wash:rgba(15,118,110,.06); --a-05:rgba(15,118,110,.05);
+    --a-10:rgba(15,118,110,.10);   --a-35:rgba(15,118,110,.35);  --la-05:rgba(27,100,216,.06);
+    /* 实测分的刻度条底色：差 → 好 三档（和级别色同源，只是更淡） */
+    --gauge-d:rgba(179,38,30,.13); --gauge-b:rgba(180,83,9,.13); --gauge-a:rgba(15,118,110,.14);
+    /* 字号只有这 5 档：12 微标签 · 13 次要 · 14 正文/表格 · 16 强调数值 · 19 页标题。
+       页面里所有 font-size / font 简写都从这里取，别再写裸数字。字体只有一套 --mono。 */
+    --fs-xs:12px; --fs-s:13px; --fs-m:14px; --fs-l:16px; --fs-xl:19px;
+    --mono: ui-monospace,"Cascadia Mono","JetBrains Mono","SFMono-Regular",Consolas,"DejaVu Sans Mono",monospace;
+    --shadow: 3px 3px 0 var(--ink-10);
+    --r:3px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:
+      linear-gradient(180deg,var(--a-wash),transparent 220px),
+      repeating-linear-gradient(0deg,transparent 0 23px,var(--ink-03) 23px 24px),
+      repeating-linear-gradient(90deg,transparent 0 23px,var(--ink-03) 23px 24px),
+      var(--paper);
+    color:var(--ink);
+    font:var(--fs-m)/1.55 var(--mono);
+    -webkit-font-smoothing:antialiased;
+  }
+  body::before{content:"";position:fixed;inset:0 0 auto 0;height:5px;background:linear-gradient(90deg,var(--a),var(--b) 55%,var(--d));z-index:5}
+  a{color:inherit}
+
+  /* 一屏原则：整页不滚动，滚动只发生在表格区与详情抽屉内部 */
+  .wrap{max-width:1560px;margin:0 auto;padding:12px 16px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  header.top{display:flex;flex-wrap:nowrap;gap:12px;align-items:center;justify-content:space-between;border-bottom:1px solid var(--rule);padding-bottom:8px;margin-bottom:12px;flex:none}
+  h1{margin:0;font:700 var(--fs-xl)/1.1 var(--mono);letter-spacing:.01em;white-space:nowrap}
+  h1 span{color:var(--muted);font-size:var(--fs-xs);font-weight:400;letter-spacing:0;margin-left:9px}
+  .badges{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:flex-end}
+  /* 数据来源：一条平铺的状态行。三个来源本来各装一个方框，框和内边距只占地方
+     （英文下这一行会挤到第二排），摊平后同样多的字反而更短。每一项都有自己的 title 讲清口径。 */
+  .src{display:flex;flex-wrap:wrap;gap:3px 14px;align-items:baseline;font-size:var(--fs-xs);color:var(--muted)}
+  .src > span{white-space:nowrap}
+  .src b{color:var(--ink);font-weight:600}
+
+  /* position:relative 只给详情抽屉当定位框：抽屉要和左右两张卡对齐（同一条顶边、同一条底边） */
+  .grid{flex:1;min-height:0;position:relative;display:grid;grid-template-columns:366px minmax(0,1fr);gap:14px;align-items:stretch}
+
+  .card{background:var(--panel);border:1px solid var(--ink);border-radius:var(--r);box-shadow:var(--shadow);display:flex;flex-direction:column;min-height:0;overflow:hidden}
+  .card > .hd{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 11px;border-bottom:1px solid var(--rule);background:linear-gradient(180deg,var(--ink-03),transparent);flex:none}
+  .card > .hd h2{margin:0;font:600 var(--fs-xs)/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  .card > .bd{padding:12px;flex:1;min-height:0;display:flex;flex-direction:column}
+
+  textarea{
+    width:100%;flex:1;min-height:110px;resize:none;border:1px solid var(--rule);border-radius:var(--r);
+    background:var(--field);color:var(--ink);font:var(--fs-m)/1.6 var(--mono);padding:10px;
+  }
+  textarea:focus{outline:2px solid var(--a-35);outline-offset:1px;border-color:var(--a)}
+
+  .btns{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;flex:none}
+  button,.fbtn{
+    font:600 var(--fs-s)/1 var(--mono);letter-spacing:.03em;text-transform:uppercase;
+    border:1px solid var(--ink);background:var(--panel);color:var(--ink);
+    padding:8px 12px;border-radius:var(--r);cursor:pointer;box-shadow:2px 2px 0 var(--ink-14);
+    transition:transform .08s ease,box-shadow .08s ease,background .15s ease;
+  }
+  button:hover,.fbtn:hover{transform:translate(-1px,-1px);box-shadow:3px 3px 0 var(--ink-18)}
+  button:active{transform:translate(1px,1px);box-shadow:1px 1px 0 var(--ink-18)}
+  button.primary{background:var(--ink);color:var(--onink)}
+  button.ghost{box-shadow:none;border-color:var(--rule);color:var(--muted)}
+  button:disabled{opacity:.45;cursor:not-allowed;transform:none}
+  .fbtn{display:inline-block}
+  .fbtn input{display:none}
+
+  .hint{margin:8px 0 0;color:var(--muted);font-size:var(--fs-s)}
+  .hint code{background:var(--ink-05);padding:1px 4px;border-radius:2px;color:var(--ink)}
+  .hint.mini{margin:8px 0 0;line-height:1.5;flex:none}
+  /* 国旗（第三方图床）没加载出来时的退路：两字母国家码，和国旗同宽，列不会跳 */
+  .ccfb{display:inline-block;min-width:20px;font:600 var(--fs-xs)/1 var(--mono);color:var(--muted)}
+
+  .chips{display:flex;flex-wrap:wrap;gap:6px;flex:none}
+  /* 进度条 + 状态那一句合成一行，放在结果区顶上：判定几百行要点秒到十几秒，
+     没有它页面像是卡死了。没话说时整行收起，标题行永远只有标题。 */
+  .statline{display:flex;align-items:center;gap:10px;margin:0 0 9px}
+  .statline[hidden]{display:none}
+  .prog{height:4px;border-radius:99px;background:var(--rule-soft);overflow:hidden;flex:none;margin:0 0 9px}
+  .statline .prog{flex:1;margin:0}
+  .prog i{display:block;height:100%;width:0;background:var(--a);transition:width .12s linear}
+  .prog[hidden]{display:none}
+  .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--rule);border-radius:var(--r);padding:4px 8px;background:var(--field)}
+  .chip .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
+  .chip .k{color:var(--muted);font-size:var(--fs-xs);letter-spacing:.05em;text-transform:uppercase}
+  .chip .v{font:600 var(--fs-l)/1 var(--mono)}
+  .dot.a{background:var(--a)} .dot.b{background:var(--b)} .dot.c{background:var(--c)} .dot.d{background:var(--d)} .dot.x{background:var(--unk)}
+
+  /* 统计即筛选：每个数字本身就是入口，点一下只看这一档，再点一下回到全部 */
+  button.chip{font:inherit;letter-spacing:0;text-transform:none;box-shadow:none;color:inherit;cursor:pointer}
+  button.chip:hover{border-color:var(--ink);background:var(--ink-03)}
+  button.chip:focus-visible{outline:2px solid var(--a-35);outline-offset:1px}
+  button.chip.on{background:var(--ink);border-color:var(--ink);color:var(--onink)}
+  button.chip.on .k,button.chip.on .v{color:var(--onink)}
+  button.chip.on .k{opacity:.72}
+  .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:8px 0 0;flex:none}
+  .seg{display:inline-flex;border:1px solid var(--ink);border-radius:var(--r);overflow:hidden}
+  .seg button{border:0;border-right:1px solid var(--ink);box-shadow:none;background:var(--field);text-transform:none;letter-spacing:0}
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:var(--ink);color:var(--onink)}
+
+  #tableHost{flex:1;min-height:0;overflow:auto;margin-top:8px;border:1px solid var(--rule);border-radius:var(--r);background:var(--field)}
+  table{width:100%;min-width:900px;border-collapse:collapse;font-size:var(--fs-m)}
+  thead th{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--ink);text-align:left;padding:8px 12px;font:600 var(--fs-xs)/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);white-space:nowrap;z-index:1}
+  tbody td{border-bottom:1px solid var(--rule-soft);padding:8px 12px;vertical-align:middle}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:var(--a-05)}
+  tbody tr.active{background:var(--a-10)}
+  tbody tr.rowin{animation:rowin .28s ease both}
+  @keyframes rowin{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+  /* 级别药丸：底色 + 同色文字 + 同色圆点，绿（好）→ 红（差）一眼扫过去 */
+  .tier{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;font:700 var(--fs-m)/1 var(--mono);padding:3px 7px 3px 6px;
+    border:1px solid var(--rule);border-radius:var(--r);background:var(--field)}
+  .tier i{width:10px;height:10px;border-radius:50%;display:inline-block}
+  /* 「估算」= 这一行实测样本里没有，级别是用全球段表的 ASN 先验推的
+     （不是实测，所以不写 A~ 这种怪符号） */
+  .est{margin-left:2px;padding:1px 3px;border:1px solid var(--rule);border-radius:2px;font:400 var(--fs-xs)/1.3 var(--mono);color:var(--muted);text-transform:none}
+  .tier.A{color:var(--a);border-color:var(--a-line);background:var(--a-tint)}
+  .tier.B{color:var(--b);border-color:var(--b-line);background:var(--b-tint)}
+  .tier.C{color:var(--c);border-color:var(--c-line);background:var(--c-tint)}
+  .tier.D{color:var(--d);border-color:var(--d-line);background:var(--d-tint)}
+  .tier.X{color:var(--muted)}
+  .tier.A i{background:var(--a)} .tier.B i{background:var(--b)} .tier.C i{background:var(--c)} .tier.D i{background:var(--d)}
+  .tier.X i{background:var(--unk)}
+  /* 一套语义色：绿=住宅/好 · 橙=移动/中等 · 蓝灰=商业/机构 · 红=机房/代理/差 · 灰=没证据/未获取 */
+  .t-g{color:var(--a)} .t-w{color:var(--b)} .t-n{color:var(--c)} .t-r{color:var(--d)} .t-x{color:var(--muted)}
+  .share{font:600 var(--fs-s)/1 var(--mono)}
+  /* 表格里的「构成 · 住宅」：密度条和数字必须同一行 */
+  .tcell{display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .tcell .stack{flex:0 0 96px;min-width:0}
+  .stack{display:flex;height:9px;border-radius:2px;overflow:hidden;background:var(--rule-soft);min-width:96px}
+  .stack i{display:block;height:100%}
+  /* 构成条（详情里的放大版）：和表格那一列同一套颜色、同一套宽度算法，段上直接写名字/个数/占比 */
+  .comp{margin:0 0 12px}
+  .cbar{display:flex;height:26px;border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;background:var(--rule-soft)}
+  .cbar i{display:flex;align-items:center;justify-content:center;gap:6px;overflow:hidden;white-space:nowrap;
+    font:600 var(--fs-xs)/1 var(--mono);color:var(--onink);text-shadow:0 1px 0 var(--ink-28)}
+  .cbar i em{font-style:normal;font-weight:400}
+  .cbar i.unk{color:var(--ink);text-shadow:none}
+  /* 窄到写不下的段：数字挪到下面一行，仍然是同一套颜色 */
+  .clegend{display:flex;flex-wrap:wrap;gap:4px 12px;margin-top:5px;color:var(--muted);font-size:var(--fs-xs)}
+  .clegend span{display:inline-flex;align-items:center;gap:5px}
+  .clegend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+  /* 城市分布：一行标签，每个标签一个地名 + 落在这个城市的取值数 */
+  .crow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px}
+  .cchip{display:inline-flex;align-items:baseline;gap:5px;border:1px solid var(--rule);border-radius:var(--r);
+    padding:3px 8px;background:var(--field);font-size:var(--fs-s)}
+  .cchip em{font-style:normal;color:var(--muted);font-size:var(--fs-xs)}
+  .mono-s{color:var(--muted);font-size:var(--fs-s)}
+  .la{color:var(--la);font-weight:700}
+
+  /* 详情 / 单 IP 报告 = 右侧抽屉，不把页面撑长（一屏原则） */
+  /* 从页头下沿开始，不遮住数据来源徽标 */
+  /* 抽屉自己就是那张「弹出来的卡」：一条钉得住、一动不动的标题行 + 一块连续滚动的正文。
+     抽屉不再滚（标题行在滚动区外面，一开滚不会先跳一下，正文也不会从它底下钻过去），
+     正文里也不再套第二层卡片边框 —— 套上就变成「页面里搁了个盒子」，不像弹窗了。
+     定位钉在 .grid 上：顶边/底边和旁边两张卡齐平，右边留出页面内边距，看着就是一张卡。 */
+  #detailHost{position:absolute;inset:0 0 0 auto;width:min(660px,46vw);z-index:8;
+    display:flex;flex-direction:column;overflow:hidden;background:var(--panel);
+    border:1px solid var(--ink);border-radius:var(--r);box-shadow:var(--shadow),-12px 0 26px var(--ink-14)}
+  #detailHost:empty{display:none;box-shadow:none}
+  /* 标题行：和卡片头同一套尺寸/字号，一条细线收尾，和正文一眼分开 */
+  #detailHost .dbar{flex:none;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:8px 11px;border-bottom:1px solid var(--rule);background:var(--panel)}
+  #detailHost .dbar h2{margin:0;font:600 var(--fs-xs)/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+  #detailHost .dscroll{flex:1;min-height:0;overflow:auto;padding:12px}
+  /* 行详情：内容块直接落在抽屉面上，不再有第二层卡 */
+  #detailHost .dbd{display:flex;flex-direction:column;animation:rowin .3s ease both}
+  /* 窄屏：抽屉铺满整屏，不再是「旁边那张卡」 */
+  @media (max-width:1000px){ #detailHost{position:fixed;inset:0;width:auto;border:0;border-radius:0} }
+  .detail{margin-top:0;animation:rowin .3s ease both}
+  /* 结论块：这一行到底是什么 —— 大字 + 语义色左边条，先看这一块 */
+  .verdict{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 10px;margin:0 0 12px;padding:9px 11px;
+    border:1px solid var(--rule);border-left:4px solid var(--unk);border-radius:var(--r);background:var(--field)}
+  .verdict.t-g{border-left-color:var(--a)} .verdict.t-w{border-left-color:var(--b)}
+  .verdict.t-n{border-left-color:var(--c)} .verdict.t-r{border-left-color:var(--d)}
+  .verdict .v1{font:700 var(--fs-l)/1.2 var(--mono)}
+  .verdict .vright{margin-left:auto;display:inline-flex;align-items:baseline;gap:10px}
+  .verdict .v2{color:var(--muted);font:600 var(--fs-s)/1.2 var(--mono)}
+  /* 行级得分：和表格里那一列同一个数、同一把配色尺子 */
+  .scpill{display:inline-flex;align-items:baseline;gap:5px;padding:2px 7px;border:1px solid var(--rule);
+    border-radius:var(--r);background:var(--ink-03);color:var(--muted);font-size:var(--fs-xs)}
+  /* 定义格：标签一列对齐、值一列，悬停/次要说明压在值下面 —— 不再是挤成一行的 kv */
+  .defs{display:grid;grid-template-columns:auto minmax(0,1fr);gap:0;margin:0;border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;background:var(--field)}
+  .defs dt{padding:7px 10px;border-bottom:1px solid var(--rule-soft);background:var(--ink-02);color:var(--muted);font-size:var(--fs-s);white-space:nowrap}
+  .defs dd{display:flex;flex-wrap:wrap;align-items:center;gap:2px 8px;margin:0;padding:7px 10px;border-bottom:1px solid var(--rule-soft);font-size:var(--fs-m)}
+  .defs dt:last-of-type,.defs dd:last-of-type{border-bottom:0}
+  .defs .dwhy{color:var(--muted);font-size:var(--fs-xs)}
+  .defs b{font-weight:600}
+  /* 铺满整宽：格子按面板宽度自动排列（一行多少个随宽度走），别在右边留一大片空白 */
+  .heat{display:grid;grid-template-columns:repeat(auto-fill,minmax(17px,1fr));gap:2px;border:1px solid var(--rule);padding:5px;background:var(--field);border-radius:var(--r)}
+  .heat i{display:block;aspect-ratio:1/1;border-radius:1px;background:var(--unk);animation:cell .3s ease both}
+  /* 得分配色：绿 ≥75 / 橙 50–74 / 蓝灰 25–49 / 红 <25（与报告里的合成分同一把尺子） */
+  .sc{font:700 var(--fs-m)/1 var(--mono)}
+  .sc.g{color:var(--a)} .sc.o{color:var(--b)} .sc.b{color:var(--c)} .sc.d{color:var(--d)}
+  .sc.pill{padding:2px 6px;border:1px solid currentColor;border-radius:var(--r);background:var(--ink-03)}
+  .heat i.isp{background:var(--isp)} .heat i.dc{background:var(--dc)} .heat i.biz{background:var(--biz)} .heat i.mob{background:var(--mob)}
+  .heat i.onla{outline:2px solid var(--la);outline-offset:-2px}
+  /* 热力格子的悬浮详情：IP 一行加粗，城市/运营商、类别各一行 —— 格子里塞不下的都摊在这儿 */
+  #tip{position:fixed;z-index:20;display:none;pointer-events:none;max-width:340px;padding:6px 9px;
+    background:var(--panel);border:1px solid var(--ink);border-radius:var(--r);box-shadow:var(--shadow);
+    font-size:var(--fs-s);line-height:1.4}
+  #tip b{display:block;font:700 var(--fs-m)/1.35 var(--mono)}
+  #tip span{display:block;color:var(--muted)}
+  @keyframes cell{from{opacity:0;transform:scale(.6)}to{opacity:1;transform:none}}
+  .legend{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 0;font-size:var(--fs-s);color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:5px}
+  .legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+  /* 不再自己带滚动条：抽屉里只留 .dscroll 一条（嵌套滚动条会把滚轮抢走，滚动看着像卡住）。
+     列表本来就截了前 40 条，长不到哪去。 */
+  .cands{border:1px solid var(--rule);border-radius:var(--r);background:var(--field)}
+  .cands div.c{display:grid;gap:8px;padding:6px 8px;border-bottom:1px solid var(--rule-soft);font-size:var(--fs-m)}
+  .cands.asn div.c{grid-template-columns:86px 76px minmax(0,1fr) 148px}
+  .cands.cand div.c{grid-template-columns:minmax(0,150px) minmax(0,1fr) minmax(0,1.1fr)}
+  .cands.cand.wide div.c{grid-template-columns:128px 128px minmax(0,1fr) minmax(0,1.1fr)}
+  .cands div.c:last-child{border-bottom:0}
+  .cands div.c:hover{background:var(--la-05)}
+  /* 一行一件事：名称再长也不折行，省得每行占三行高 */
+  .cands div.c > *{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .empty{padding:16px;color:var(--muted);text-align:center;border:0}
+  /* 规则 / 来源说明：不占版面，点按钮才浮出来 */
+  button.sm{box-shadow:none;border-color:var(--rule);text-transform:none;letter-spacing:0;padding:6px 12px;font-size:var(--fs-s)}
+  #rulesHost{position:fixed;inset:0;background:var(--ink-50);display:flex;align-items:center;justify-content:center;padding:18px;z-index:10}
+  #rulesHost[hidden]{display:none}
+  .sheet{width:100%;max-width:1000px;max-height:88vh}
+  .sheet .bd{overflow:auto;padding:12px 16px}
+  .sheet ul{margin:0;padding-left:18px;color:var(--muted)}
+  .sheet li{margin:5px 0}
+  .sheet li b{color:var(--ink)}
+  .sheet .gen{margin:12px 0 0;border-top:1px solid var(--rule);padding-top:12px;color:var(--muted);font-size:var(--fs-s)}
+  .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(12px);background:var(--ink);color:var(--onink);padding:9px 14px;border-radius:var(--r);opacity:0;pointer-events:none;transition:opacity .2s ease,transform .2s ease;font-size:var(--fs-m);z-index:12}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  /* 单 IP 实测报告：每个数字都带来源，来源行一律小号 + 灰 */
+  .rep{margin-top:12px}
+  .rep .rtarget{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;padding:8px 10px;border:1px solid var(--rule);border-radius:var(--r);background:var(--field)}
+  .rep .rtarget code{font:700 var(--fs-l)/1 var(--mono)}
+  .rep .rts{margin-left:auto;color:var(--muted);font-size:var(--fs-s)}
+  /* 事实清单：一块面板 + 每行「标签 / 值 / 来源」三栏对齐，左边一条语义色 —— 整齐、能扫 */
+  .rfacts{margin-top:6px;border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;background:var(--field)}
+  .rcell{display:grid;grid-template-columns:104px minmax(0,1fr);gap:1px 10px;padding:7px 10px;
+    border-bottom:1px solid var(--rule-soft);border-left:3px solid var(--rule)}
+  .rcell:last-child{border-bottom:0}
+  .rcell.t-g{border-left-color:var(--a)} .rcell.t-w{border-left-color:var(--b)}
+  .rcell.t-n{border-left-color:var(--c)} .rcell.t-r{border-left-color:var(--d)}
+  .rcell .rk{grid-column:1;grid-row:1 / span 2;padding-top:2px;color:var(--muted);font-size:var(--fs-xs);letter-spacing:.06em;text-transform:uppercase}
+  .rcell .rv{grid-column:2;grid-row:1;font-size:var(--fs-m);word-break:break-word}
+  .rcell .rsrc{grid-column:2;grid-row:2;color:var(--muted);font-size:var(--fs-xs)}
+  .rcell .rsrc a{color:var(--la)}
+  /* 小节标题 / 脚注：只做分隔，不抢戏 */
+  .rsub{margin:12px 0 5px;color:var(--muted);font-size:var(--fs-s)}
+  /* 报告面板默认态的那句「点实测取证查什么」：一行，压灰，不占版面 */
+  .rhint{margin:9px 0 0;color:var(--muted);font-size:var(--fs-xs);line-height:1.5}
+  .rtags{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 0}
+  .rtag{display:inline-flex;align-items:baseline;gap:6px;border:1px solid var(--rule);border-radius:var(--r);padding:4px 8px;font-size:var(--fs-s);background:var(--field)}
+  .rtag em{font-style:normal;color:var(--muted);font-size:var(--fs-xs)}
+  .rtag.d{border-color:var(--d);color:var(--d)} .rtag.b{border-color:var(--b);color:var(--b)}
+  .rtag.c{border-color:var(--c);color:var(--c)}
+  .rtag.n{border-color:var(--rule);color:var(--ink)}
+  .rgauge{margin-top:14px}
+  .rbar{position:relative;height:12px;border-radius:2px;background:linear-gradient(90deg,var(--gauge-d),var(--gauge-b),var(--gauge-a))}
+  .rbar > span{position:absolute;inset:0 auto 0 0;border-radius:2px;transition:width .45s ease}
+  .rbar > i{position:absolute;top:-3px;width:2px;height:18px;background:var(--ink)}
+  .rscale{display:flex;justify-content:space-between;color:var(--muted);font-size:var(--fs-xs);margin-top:3px}
+  .parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:3px 14px;font-size:var(--fs-m)}
+  .parts b{font-family:var(--mono)}
+  @media (max-width:1000px){
+    .wrap{height:auto;min-height:100vh;overflow:visible}
+    .grid{grid-template-columns:1fr}
+    header.top{flex-wrap:wrap}
+    #tableHost{max-height:70vh}
+    textarea{min-height:150px}
+  }
+  @media (prefers-reduced-motion:reduce){ *{animation:none!important;transition:none!important} }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>IPurity<span>住宅 IP 纯净度分级</span></h1>
+    <div class="badges">
+      <span class="src">
+        <span title="实测样本：ip-api.com 逐 /24 实测过的记录（这一层是实测，不是估算；没覆盖到的段落到全球段表）。时间是这一包的生成时间。">实测样本 <b id="dataPrefixes">–</b> 组 · <b id="dataRows">–</b> · <b id="dataDate">载入中…</b></span>
+        <span title="全球段表：iptoasn 段表（每天更新）+ PeeringDB + bad-asn-list。任意可路由的 IP 都查得到，但只到 ASN 这一层 —— 所以级别是上限，不是实测。">全球段表 <b id="worldState">后台加载中…</b></span>
+        <span title="城市库（DB-IP City Lite）按 IP 第一段切片，全量 220 片 / 33 MB；页面只下载这份清单里出现过的 /8 —— 数字 = 已取片数 / 本单需要的片数。10、29、127、224–255 这些段库里本来就没有记录。">城市库 <b id="cityState">按需加载</b></span>
+      </span>
+      <button class="sm" id="rulesBtn">规则 / 来源</button>
+      <button class="sm" id="langBtn" title="Switch to English">EN</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card">
+      <div class="hd"><h2>① 粘贴清单</h2></div>
+      <div class="bd">
+        <textarea id="input" spellcheck="false" placeholder="1	198.*.205.197
+2	82.24.73.*
+3	198.3.242.0/24
+4	198.3.243.16
+
+整表直粘：只读 IP 那一列，也可以只贴一列；198 3 242 16 这种空格分隔也认。
+打码位也认 ? 和 x（198.?.42.81）；CIDR 按它覆盖的 /24 收（最短 /16）。
+第 2 段打码 → 256 个 /24；第 4 段打码 → 254 个可用地址；结论落回整行。"></textarea>
+        <div class="btns">
+          <button class="primary" id="run" title="Ctrl+↵ 判定：离线分级，只看 ASN 段表，不发任何请求">判定</button>
+          <button id="verify" disabled title="抽样核验推荐行（A/B 级前 12 行）：每行按打码位置抽 3 个 IP 发给 ipwho.is / ip-api，用来认出「挂在运营商下面的机房段」（如 177.202.126.0/24 挂在 KT 的 AS4766 下、实际是 Ace Data Centers）。抽到机房即整行改判 D。不点就不发请求，已核验过的行不重复查。">联网核验</button>
+          <button class="ghost" id="clear">清空</button>
+          <label class="fbtn">导入<input type="file" id="file" accept=".txt,.csv,text/plain"></label>
+        </div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="hd"><h2>② 分级结果</h2></div>
+      <div class="bd">
+        <div class="statline" id="statline" hidden>
+          <div class="prog" id="prog" hidden><i id="progBar"></i></div>
+          <span class="mono-s" id="stat"></span>
+        </div>
+        <div class="toolbar">
+          <div class="chips" id="chips"></div>
+          <div class="btns" style="margin:0">
+            <button id="export" disabled>导出排名</button>
+            <button class="ghost" id="exportCand" disabled>导出枚举</button>
+            <button class="ghost" id="copyAll" disabled>复制排名</button>
+          </div>
+        </div>
+        <p class="hint mini" id="cityHint" hidden></p>
+        <div id="tableHost"><div class="empty">粘贴清单后点「判定」，这里会按级别列出结果。</div></div>
+      </div>
+    </section>
+
+    <!-- 详情抽屉：绝对定位在 .grid 里，顶边/底边和左右两张卡齐平；有内容才显示 -->
+    <div id="detailHost"></div>
+  </div>
+
+  <div id="rulesHost" hidden>
+    <section class="card sheet">
+      <div class="hd"><h2>判定规则与数据来源</h2><button class="ghost" id="rulesClose">关闭</button></div>
+      <div class="bd">
+    <div data-lang="zh">
+    <ul>
+      <li><b>A 住宅为主</b>：该模式 256 个候选 /24 里 ≥150 个属于住宅 ISP；<b>B 住宅+商业混合</b>：60–149 个；<b>C 商业/机构为主</b>：20–59 个；<b>D 机房/机构为主</b>：&lt;20 个，或机房标记 ≥100 个。住宅 ISP = Comcast / Charter / Cox / Frontier / CenturyLink / Cablevision / Mediacom / Bell / TELUS 这类零售运营商。</li>
+      <li><b>红线</b>：<code>hosting=true</code> / <code>proxy=true</code> 直接判机房；Verizon Business / Level 3 / Cogent / NTT / AT&amp;T Enterprises 这类商业中转 ASN 归 C/D —— 它们常常"代理·VPN·托管三否"，但风控视作代理段，<b>"三否"不等于住宅 IP</b>。</li>
+      <li><b>三层数据，各管一段</b>：<b>实测样本</b> = 53 组 <code>o1.*.o3</code>（13,568 个 /24）用 ip-api.com 逐个查过，最准，但只覆盖这些段；<b>全球段表</b> = iptoasn 全量 IPv4 段表（53.9 万段，覆盖全部可路由地址）＋ PeeringDB ＋ bad-asn-list —— 任意 IP 都查得到，但只到 ASN 这一层，级别是<b>上限</b>；<b>城市库</b> = DB-IP City Lite（CC BY 4.0），IP → 城市/国家，按 <code>/8</code> 懒加载。</li>
+      <li><b>标定库</b>：大型混合 ASN（AT&amp;T Enterprises / Verizon Business / Amazon / Level 3 / Cogent…）内部既有住宅池也有企业段，只按 ASN 判会虚高；工具用实测样本的 1 万多个 /24 反推每个 ASN 的住宅占比（<code>asn-calib.js</code>）把它压下去。</li>
+      <li><b>排序</b>：先级别、再得分、再住宅占比、再扫描时定位在洛杉矶都会区的 /24 数；行内候选段也是先 <span class="la">★LA</span>、再城市、再 IP。<span class="la">★LA</span> = 实测样本里这一条被 ip-api 定位在洛杉矶都会区（扫描时的实测记录，不是你清单里写的城市）。</li>
+      <li><b>「判定」= 离线分级</b>：只拉本站数据文件，不发任何请求。<b>「联网核验」= 整行抽样</b>：默认不点就不发，只做推荐行（A/B 级）前 12 行，每行按打码位置抽 3 个 IP 发给 <code>ipwho.is</code> / <code>ip-api</code>（整张清单不上传），抽到机房即整行改判 D；失败只标注，不动原来的级别。</li>
+      <li><b>「实测取证」= 单个 IP 的联网核查</b>：在行详情里点它，只查<b>这一行的代表 IP</b>。五个来源各自独立、谁失败都不影响别人：<code>rdap.org</code>（注册局注册记录）· DoH 反向解析 PTR · Team Cymru（DoH TXT 查 origin ASN）· <code>stat.ripe.net</code> RIPEstat（另一条 BGP 视图，与 Cymru 互相印证）· Shodan InternetDB（扫到的端口 / 漏洞 / 标签，404 = 没有记录）。查不到就写「未获取」，不填占位数字。</li>
+      <li><b>主要国家 / 主要城市</b>：一整行可能有多个取值（打码位展开后 254/256 个），这两列给的是<b>取值最多的那个</b>。国家优先用城市库的 <b>IP 定位国</b>，城市片还没加载时退回全球段表的 <b>ASN 注册国</b>（登记在 A 国、实际用在 B 国很常见）。悬停写明用的是哪一个、占多少取值，其余落点在详情里列出来。清单里写的国家和城市一律不看，城市只作参考。</li>
+      <li><b>打码位怎么展开</b>：第 2 段打码（<code>198.*.42.81</code>）→ 枚举 <code>198.0.42.81 … 198.255.42.81</code> 共 256 个 /24；第 4 段打码（<code>82.24.73.*</code>）→ 枚举这个 /24 的 <b>254 个可用主机地址（1–254）</b>，<code>.0</code>（网络地址）和 <code>.255</code>（广播地址）自动排除。<b>排名按行</b>：带 <code>*</code> 的模式整行参与排名，枚举出来的 IP 只是落点参考，不单独排。</li>
+      <li><b>城市片什么时候拉</b>：整份清单用到的 /8 在判定这一趟里一次拉完（16 个一批），<b>判定不等它</b> —— 结论先出来，城市片到位一片就把那个 /8 的两列补上。顶栏徽标的数字 = 已取片数 / 这份清单需要的片数，不是库里的 220 片。城市名一律用 DB-IP 原文（英文），<b>不做本地化</b>：译名表永远收不全，一翻就中英混排，宁可不翻。</li>
+      <li><b>报告里的颜色</b>：绿 = 往住宅方向推（注册记录 / 接口 org 与段表运营商是同一家、实测 ASN 与离线一致）· 橙 = 移动、两路 BGP 打架或前后不一致 · 蓝灰 = 商业·机构 · 红 = 机房/代理、InternetDB 有已知漏洞 · 灰 = 没查到或中性事实（<b>没命中不代表住宅 IP</b>）。</li>
+    </ul>
+    </div>
+    <div data-lang="en" hidden>
+      <ul>
+        <li><b>Tier A — mostly residential</b>: ≥150 of the pattern's 256 candidate /24 blocks belong to retail ISPs; <b>B — residential + business</b>: 60–149; <b>C — mostly business/institutional</b>: 20–59; <b>D — mostly datacenter/institutional</b>: &lt;20, or ≥100 datacenter flags. Retail ISP = carriers such as Comcast / Charter / Cox / Frontier / CenturyLink / Cablevision / Mediacom / Bell / TELUS.</li>
+        <li><b>Red lines</b>: <code>hosting=true</code> or <code>proxy=true</code> means datacenter. Carrier-transit ASNs such as Verizon Business / Level 3 / Cogent / NTT / AT&amp;T Enterprises are ranked C/D — they often show hosting, proxy and VPN all “false”, yet risk engines treat them as proxy blocks. <b>“All false” does not make a residential IP.</b></li>
+        <li><b>Three data layers</b>: <b>measured sample</b> = 53 <code>o1.*.o3</code> groups (13,568 /24 blocks) looked up one by one via ip-api.com — the most accurate, but it only covers those blocks; <b>Global ASN table</b> = the full iptoasn IPv4 table (539k segments, every routable address) plus PeeringDB and bad-asn-list — any IP resolves, but only down to the ASN, so the tier is an <b>upper bound</b>; <b>City DB</b> = DB-IP City Lite (CC BY 4.0), IP → city/country, lazily loaded per <code>/8</code>.</li>
+        <li><b>Calibration</b>: large mixed ASNs (AT&amp;T Enterprises / Verizon Business / Amazon / Level 3 / Cogent…) hold both residential pools and enterprise blocks, so judging by the ASN alone inflates the score. The tool infers each ASN's residential share from the 10k+ measured-sample /24 blocks (<code>asn-calib.js</code>).</li>
+        <li><b>Sorting</b>: tier, then score, then residential share, then how many /24 blocks ip-api located in the LA metro when it scanned; candidate blocks inside a row are ordered <span class="la">★LA</span> first, then city, then IP. <span class="la">★LA</span> = the measured sample located that record in the LA metro area (a scan record, not a city written in your list).</li>
+        <li><b>“Judge” = offline tiering</b>: it only loads this site's own data files and sends no requests. <b>“Online check” = sampled per row</b>: nothing is sent unless you press it; it covers the first 12 recommended (tier A/B) rows, sends 3 IPs per row (picked by the masked position) to <code>ipwho.is</code> / <code>ip-api</code> — your whole list is never uploaded — and one datacenter hit flips the row to tier D. Failures are only annotated; the original tier stays.</li>
+        <li><b>“Live lookup” = one IP, online</b>: press it in a row's detail panel and only <b>that row's representative IP</b> is queried. Five independent sources — one failing never affects the others: <code>rdap.org</code> (registry record) · DoH reverse DNS (PTR) · Team Cymru (origin ASN over DoH TXT) · <code>stat.ripe.net</code> RIPEstat (a second BGP view that cross-checks Cymru) · Shodan InternetDB (scanned ports / CVEs / tags; 404 means “no record”). Anything unavailable is written as “not fetched”, never a placeholder.</li>
+        <li><b>Main country / Main city</b>: a row can hold many values (254/256 after expanding the mask), and these two columns show the <b>most common one</b>. Country prefers the <b>IP-location country</b> from the City DB and falls back to the <b>ASN registration country</b> from the global ASN table while that /8's city slice is still loading (registered in country A, used in country B is common). The tooltip says which one was used and how many values it covers; the remaining landing points are listed in the detail panel. Countries and cities written in your list are ignored entirely, and the city is a hint only.</li>
+        <li><b>How a masked octet expands</b>: 2nd octet masked (<code>198.*.42.81</code>) → 256 /24 blocks, <code>198.0.42.81 … 198.255.42.81</code>; 4th octet masked (<code>82.24.73.*</code>) → the /24's <b>254 usable host addresses (1–254)</b>, with <code>.0</code> (network) and <code>.255</code> (broadcast) skipped. <b>Ranking is per row</b>: a masked pattern (<code>*</code>) is ranked as a whole, and the IPs it expands into are landing-point hints only.</li>
+        <li><b>When city slices load</b>: every /8 the list needs is fetched during the judging run (16 at a time), but <b>judging does not wait</b> — conclusions appear first and each slice fills in that /8's two columns as it arrives. The header badge counts slices loaded / slices this list needs, not the 220 slices in the database. City names are always shown exactly as DB-IP spells them (English) and <b>never localized</b> — a translation table is never complete, and one missing entry leaves a list mixing languages.</li>
+        <li><b>Colours in the report</b>: green = evidence pushing towards residential (registry record or API org matching the block's carrier, live ASN matching the offline table) · orange = mobile, two BGP views disagreeing, or an inconsistency · slate = business/institutional · red = datacenter/proxy, or known CVEs in InternetDB · grey = not found or a neutral fact (<b>“no hit” does not mean residential</b>).</li>
+      </ul>
+    </div>
+    <p class="gen" id="genAt"></p>
+    <p class="gen">纯静态站点 · 无后端 · 无追踪 · 粘贴内容不上传 · 数据包随仓库发布</p>
+      </div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="data/segments-data.js?v=20261014af"></script>
+<script src="assets/i18n.js?v=20261014af"></script>
+<script src="assets/core.js?v=20261014af"></script>
+<script src="assets/city.js?v=20261014af"></script>
+<script src="assets/online.js?v=20261014af"></script>
+<script src="assets/enrich.js?v=20261014af"></script>
+<script src="assets/report.js?v=20261014af"></script>
+<script src="assets/sources.js?v=20261014af"></script>
+<script src="assets/app.js?v=20261014af"></script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+# 编辑器 / 系统
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# 临时扫描产物（prefixmap-all.csv 是逐 /24 实测的原始结果，要留着 —— 重扫一遍要跑上万个请求）
+build/tmp/
+build/*.tmp
+build/commitmsg.txt
+build/prefixmap-new.csv
+*.log
+
+# ASN 原始数据源（十几 MB，用 tools/fetch-asn-tables.mjs 现拉）
+build/asn/
+
+# DB-IP City Lite 原始 CSV（86 MB gz，用 tools/fetch-city-tables.mjs 现拉）
+build/city/
+
+# 黑名单原始列表（Spamhaus DROP / IPsum / Tor 出口 …，用 tools/fetch-blocklists.mjs 现拉）
+build/blocklists/
+
+# 部署缓存
+.edgeone/
+.wrangler/
+node_modules/
+

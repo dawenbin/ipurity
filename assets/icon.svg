@@ -1,0 +1,14 @@
+<!--
+  IPurity 标记：四根柱子 = 四档级别（A 住宅 / B 混合 / C 商业 / D 机房），
+  高度按「纯度」递减，颜色就是页面那四个语义色（绿·橙·蓝灰·红）。
+  纯手写 SVG：换尺寸不糊，也能直接当 favicon 用。
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="IPurity">
+  <rect x="1" y="1" width="254" height="254" rx="48" fill="#f5f2ec" stroke="#ded7c9" stroke-width="2"/>
+  <g>
+    <rect x="28"  y="68"  width="32" height="120" rx="9" fill="#0f766e"/>
+    <rect x="84"  y="92"  width="32" height="96"  rx="9" fill="#b45309"/>
+    <rect x="140" y="116" width="32" height="72"  rx="9" fill="#3f5673"/>
+    <rect x="196" y="140" width="32" height="48"  rx="9" fill="#b3261e"/>
+  </g>
+</svg>
