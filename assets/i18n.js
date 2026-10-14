@@ -334,7 +334,7 @@
     [/% \/ 商业 /, "% / business "],
     [/纯静态站点 · 无后端 · 无追踪 · 粘贴内容不上传 · 数据包随仓库发布/,
       "Static site · no backend · no tracking · pasted content is never uploaded · data packs ship with the repo"],
-    [/判定规则与数据来源/, "Judging rules and data sources"]
+    [/判定口径与数据来源/, "Scoring rules and data sources"]
   );
 
   /* ---------- 判定核心与联网核验里回显的原因（详情面板 / 报告里会显示） ---------- */

@@ -1,16 +1,16 @@
 <div align="center">
 
-<img src="assets/icon.svg" width="104" alt="IPurity">
+<img src="assets/icon.svg" width="104" alt="iPurity">
 
-# IPurity
+# iPurity
 
 **批量甄别住宅 IP 的网页工具。**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-111111)](LICENSE) ![Static](https://img.shields.io/badge/static-no%20backend-111111) ![Tracking](https://img.shields.io/badge/tracking-none-111111) ![UI](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%7C%20English-111111)
 
-**[在线使用](https://ipurity.pages.dev)** &nbsp;·&nbsp; **[判定口径](docs/judging-criteria.md)** &nbsp;·&nbsp; **[数据流水线](docs/data-pipeline.md)** &nbsp;·&nbsp; **中文** · [English](README.en.md)
+**[在线使用](https://ipurity.pages.dev)** &nbsp;·&nbsp; **[判定口径](docs/judging-criteria.md)** &nbsp;·&nbsp; **[数据更新](docs/data-pipeline.md)** &nbsp;·&nbsp; **中文** · [English](README.en.md)
 
-![IPurity 界面：左侧粘贴清单，右侧按级别排名](docs/screenshot.png)
+![iPurity 界面：左侧粘贴清单，右侧按级别排名](docs/screenshot.png)
 
 </div>
 
@@ -19,7 +19,7 @@
 订阅 AI 服务、开跨境电商店铺、运营 TikTok 和社媒多账号时，风控第一眼看的就是这个 IP 属于住宅宽带还是
 机房。把候选清单整张粘进来，一眼看出哪些属于住宅 IP。
 
-## 判定方式
+## 判定口径
 
 工具只看 IP：清单里写的国家、城市、备注一律不看，国家和城市由它自己查。
 带 `*` 的一行会被展开成 256 个网段（`*` 在第 4 段时为 254 个），逐个判断，再按住宅占比定级：
@@ -49,7 +49,7 @@
 
 数据包随仓库一起发布（见 `data/`）。`.github/workflows/` 里的定时任务每天刷新 ASN 层、每月刷新
 城市层，只有上游数据真的变了、自检也通过，才会提交。手工更新的命令与数据格式见
-[数据流水线](docs/data-pipeline.md)。
+[数据更新](docs/data-pipeline.md)。
 
 ## 隐私
 

@@ -1,16 +1,16 @@
 <div align="center">
 
-<img src="assets/icon.svg" width="104" alt="IPurity">
+<img src="assets/icon.svg" width="104" alt="iPurity">
 
-# IPurity
+# iPurity
 
 **A web tool that batch-checks residential IPs.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-111111)](LICENSE) ![Static](https://img.shields.io/badge/static-no%20backend-111111) ![Tracking](https://img.shields.io/badge/tracking-none-111111) ![UI](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%7C%20English-111111)
 
-**[Live site](https://ipurity.pages.dev)** &nbsp;·&nbsp; **[Scoring rules](docs/judging-criteria.md)** &nbsp;·&nbsp; **[Data pipeline](docs/data-pipeline.md)** &nbsp;·&nbsp; [中文](README.md) · **English**
+**[Live site](https://ipurity.pages.dev)** &nbsp;·&nbsp; **[Scoring rules](docs/judging-criteria.md)** &nbsp;·&nbsp; **[Data refresh](docs/data-pipeline.md)** &nbsp;·&nbsp; [中文](README.md) · **English**
 
-![The IPurity interface: your list on the left, the ranking on the right](docs/screenshot.en.png)
+![The iPurity interface: your list on the left, the ranking on the right](docs/screenshot.en.png)
 
 </div>
 
@@ -20,7 +20,7 @@ Subscribing to AI services, running a cross-border e-commerce shop, running TikT
 the first thing a risk engine looks at is whether the IP is a residential line or a datacenter. Paste your whole
 candidate list and see which of them are residential.
 
-## How grading works
+## Scoring rules
 
 The tool only reads IPs: country, city and notes in your list are ignored, and country and city are looked up by
 the tool itself. A row with `*` is expanded into 256 ranges (254 when the `*` is in the 4th octet), each one is
@@ -52,7 +52,7 @@ want the city a single IP sits in, it will not help you.
 
 The data files ship with the repository (see `data/`). The scheduled jobs in `.github/workflows/` refresh the
 ASN layer daily and the city layer monthly, and commit only once the upstream data has actually changed and the
-self-checks pass. Manual commands and file formats are in [Data pipeline](docs/data-pipeline.md) (Chinese).
+self-checks pass. Manual commands and file formats are in [Data refresh](docs/data-pipeline.md) (Chinese).
 
 ## Privacy
 
