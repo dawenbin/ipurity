@@ -74,8 +74,6 @@ node tools/query.mjs "130.*.253.66" "82.24.73.*"    # 命令行查询
 
 ## 许可
 
-本项目采用 [Apache-2.0](LICENSE) 许可，文档采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)。
-
-`iPurity` 名称与图标保留所有权利，不在上述许可范围内。
+本项目采用 [Apache-2.0](LICENSE) 许可，文档采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)；`iPurity` 名称与图标保留所有权利，不在上述许可范围内。
 
 `data/` 下的数据来自第三方，各自的许可与署名见 [NOTICE](NOTICE) —— 其中实测记录来自 ip-api.com 免费接口，仅限非商业用途。
