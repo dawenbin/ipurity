@@ -4,7 +4,7 @@
 
 # IPurity
 
-**一次一个 IP 太慢，整张清单一次查完，秒出纯净度。**
+**批量甄别住宅 IP**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-111111)](LICENSE) ![Static](https://img.shields.io/badge/static-no%20backend-111111) ![Tracking](https://img.shields.io/badge/tracking-none-111111) ![UI](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%7C%20English-111111)
 
