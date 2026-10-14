@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- build 戳：静态托管的 CDN 会缓存 js/数据包，改完资源就把它改一下，
      脚本 src 与 ?v= 都指向它，避免「新 HTML + 旧 JS」这种半新半旧的状态 -->
-<meta name="build" content="20261014af">
-<title>IPurity · 住宅 IP 纯净度分级</title>
-<meta name="description" content="IPurity · 批量甄别 IP 段的住宅纯净度：整表直粘 → 打码位自动展开 → 按段分级排序，告诉你该拿哪一段。纯静态、本地计算。">
+<meta name="build" content="20261014ag">
+<title>IPurity · 批量甄别住宅 IP</title>
+<meta name="description" content="IPurity · 批量甄别住宅 IP：整表直粘 → 打码位自动展开 → 按段分级排序，告诉你该拿哪一段。纯静态、本地计算。">
 <!-- 图标：SVG 优先（任意尺寸都清晰），.ico / PNG 兜底给不认 SVG 图标的浏览器与 iOS 主屏 -->
-<link rel="icon" href="favicon.ico?v=20261014af" sizes="32x32 48x48">
-<link rel="icon" type="image/svg+xml" href="assets/icon.svg?v=20261014af" sizes="any">
-<link rel="apple-touch-icon" href="assets/icon-180.png?v=20261014af">
+<link rel="icon" href="favicon.ico?v=20261014ag" sizes="32x32 48x48">
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg?v=20261014ag" sizes="any">
+<link rel="apple-touch-icon" href="assets/icon-180.png?v=20261014ag">
 <style>
   :root{
     --paper:#f5f2ec; --panel:#fffdf8; --ink:#14161a; --muted:#6a7080;
@@ -309,7 +309,7 @@
 <body>
 <div class="wrap">
   <header class="top">
-    <h1>IPurity<span>住宅 IP 纯净度分级</span></h1>
+    <h1>IPurity<span>批量甄别住宅 IP</span></h1>
     <div class="badges">
       <span class="src">
         <span title="实测样本：ip-api.com 逐 /24 实测过的记录（这一层是实测，不是估算；没覆盖到的段落到全球段表）。时间是这一包的生成时间。">实测样本 <b id="dataPrefixes">–</b> 组 · <b id="dataRows">–</b> · <b id="dataDate">载入中…</b></span>
@@ -408,14 +408,14 @@
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="data/segments-data.js?v=20261014af"></script>
-<script src="assets/i18n.js?v=20261014af"></script>
-<script src="assets/core.js?v=20261014af"></script>
-<script src="assets/city.js?v=20261014af"></script>
-<script src="assets/online.js?v=20261014af"></script>
-<script src="assets/enrich.js?v=20261014af"></script>
-<script src="assets/report.js?v=20261014af"></script>
-<script src="assets/sources.js?v=20261014af"></script>
-<script src="assets/app.js?v=20261014af"></script>
+<script src="data/segments-data.js?v=20261014ag"></script>
+<script src="assets/i18n.js?v=20261014ag"></script>
+<script src="assets/core.js?v=20261014ag"></script>
+<script src="assets/city.js?v=20261014ag"></script>
+<script src="assets/online.js?v=20261014ag"></script>
+<script src="assets/enrich.js?v=20261014ag"></script>
+<script src="assets/report.js?v=20261014ag"></script>
+<script src="assets/sources.js?v=20261014ag"></script>
+<script src="assets/app.js?v=20261014ag"></script>
 </body>
 </html>

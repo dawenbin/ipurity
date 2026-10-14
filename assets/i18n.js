@@ -34,7 +34,7 @@
      匹配顺序：按正则源长度**从长到短** —— 先长句后碎片，否则「住宅」会把「住宅为主」拆掉。 */
   var ENTRIES = [
     /* ---------- 顶栏 / 骨架 ---------- */
-    [/住宅 IP 纯净度分级/, "Residential IP purity scoring"],
+    [/批量甄别住宅 IP/, "Batch-check residential IPs"],
     [/城市库（DB-IP City Lite）按 IP 第一段切片，全量 220 片 \/ 33 MB；页面只下载这份清单里出现过的 \/8 —— 数字 = 已取片数 \/ 本单需要的片数。10、29、127、224–255 这些段库里本来就没有记录。/,
       "City DB (DB-IP City Lite) is sliced by the first octet: 220 slices / 33 MB in total. The page downloads only the /8 slices that appear in your list — the number is slices loaded / slices this list needs. Blocks 10, 29, 127 and 224–255 have no records at all."],
     [/实测样本/, "measured sample"],
