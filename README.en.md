@@ -4,7 +4,7 @@
 
 # IPurity
 
-**No API, no key: bulk-check a whole list in one go, purity scores in seconds.**
+**Other tools check one IP at a time. Paste a whole list here, get purity scores in seconds.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-111111)](LICENSE) ![Static](https://img.shields.io/badge/static-no%20backend-111111) ![Tracking](https://img.shields.io/badge/tracking-none-111111) ![UI](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%7C%20English-111111)
 
