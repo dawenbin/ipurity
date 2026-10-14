@@ -4,7 +4,7 @@
 
 # IPurity
 
-**别的工具一次查一个 IP，我们整张清单粘进去，秒出纯净度。**
+**不用 API、不用 key，批量查询，一次就好，秒出 IP 纯净度。**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-111111)](LICENSE) ![Static](https://img.shields.io/badge/static-no%20backend-111111) ![Tracking](https://img.shields.io/badge/tracking-none-111111) ![UI](https://img.shields.io/badge/UI-%E4%B8%AD%E6%96%87%20%7C%20English-111111)
 
