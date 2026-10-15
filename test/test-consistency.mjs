@@ -55,13 +55,24 @@ check("各级行数加起来 == 总行数",
 const rows = Core.rankRows(res.rows);
 check("四行都判定成功", rows.every((r) => r.ok), rows.map((r) => r.pattern + (r.ok ? "" : ":" + r.reason)).join(" "));
 
-/* ---------- 住宅那一格：只有三种形状，且每种都自洽 ---------- */
+/* ---------- 住宅那一格：四种形状，每种都自洽 ----------
+   单个 IP            → `单个 IP · 类别`
+   纯类型先验（打码行）→ `按类型先验 · 类别`   （那个百分数是常数，不能当占比写）
+   [≈]N/M · P%        → 有实测或 ASN 标定样本支撑的占比
+   注：前两种其实是同一件事（都写类别），形状本该统一成一个「来源形态 · 类别」。
+       留着两种是技术债 —— 改它要同时动 3 条 i18n 词条和 4 条断言，等这批改动提交后再做。 */
 for (const r of rows) {
   const txt = Core.homeTxt(r);
   if (r.singleHost) {
     /* 单个 IP 只写类别：不带 ≈，也不带「数/样本」那种形状 */
     check(`${r.pattern} 单个 IP 不写占比`, /^单个 IP · /.test(txt) && !txt.includes("≈") && !/\d+\s*\//.test(txt),
       txt);
+    continue;
+  }
+  if (Core.priorOnly(r)) {
+    /* 纯类型先验：一个标定样本都没有，百分比是常数 → 写类别，绝不写占比 */
+    check(`${r.pattern} 纯先验行写类别、不写占比`,
+      /^按类型先验 · \S+$/.test(txt) && !txt.includes("≈") && !/%/.test(txt), txt);
     continue;
   }
   const m = txt.match(/^(≈?)(\d+(?:\.\d+)?)\/(\d+) · (\d+)%$/);
@@ -72,6 +83,11 @@ for (const r of rows) {
     check(`${r.pattern} ≈ 只出现在概率加权的行上`, (m[1] === "≈") === !!r.probOnly, `≈=${!!m[1]} probOnly=${!!r.probOnly}`);
   }
 }
+/* 先验行的百分比在数据层还在（排序要用），只是不上屏 —— 这一点得钉住 */
+check("纯先验行仍然有 pctIsp 供排序用（只是不上屏）", (() => {
+  const pr = rows.filter((r) => Core.priorOnly(r));
+  return pr.every((r) => typeof r.pctIsp === "number") && pr.length > 0;
+})(), rows.filter((r) => Core.priorOnly(r)).map((r) => r.pattern + "=" + r.pctIsp + "%").join(" "));
 check("单个 IP 的行住宅那格不再出现 ≈0/1 这类形状",
   rows.filter((r) => r.singleHost).every((r) => !/≈/.test(Core.homeTxt(r))),
   rows.filter((r) => r.singleHost).map((r) => Core.homeTxt(r)).join(" | "));

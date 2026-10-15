@@ -1,4 +1,4 @@
-﻿<#
+<#
   make-data.ps1 -- 把扫描结果(prefixmap-classified.csv)压成前端数据包
 
   用法:
@@ -21,15 +21,11 @@ if (-not $Generated) { $Generated = Get-Date -Format "yyyy-MM-dd HH:mm" }
 $rows = Import-Csv $InputCsv
 if (-not $rows) { throw "读不到 $InputCsv(先跑 tools/scan-prefixes.ps1)" }
 
-# 类别码: 1=住宅ISP 2=机房/云 3=商业中转/机构 4=移动 6=其他 ; +8 = ip-api 定位在下面这个都会区
+# 类别码: 1=住宅ISP 2=机房/云 3=商业中转/机构 4=移动 6=其他
+# （曾经在这里给「定位在某个都会区」的 /24 加一位 +8，页面拿它做标记和排序。
+#   后来去掉了：那一位只来自每个 /24 探的那一个地址（scan-prefixes.ps1 用 x.1），
+#   是单点推整块的结论，没有依据去决定名次。现在类别码就只有这 5 个值。）
 $CODE = @{ "ISP" = 1; "DC" = 2; "DCENT" = 3; "MOBILE" = 4; "UNK" = 6 }
-
-# 标记区域(metro)：扫描时定位在这一带的网段打上 +8 位，页面上的圈和 ★ 只看这一位。
-# 换一个都会区 = 改这四行 + 重跑扫描，前端不用动。
-$MetroNameZh = "洛杉矶都会区"
-$MetroNameEn = "LA metro area"
-$MetroTag    = "★LA"
-$MetroRx     = '^(Los Angeles|Torrance|El Segundo|Inglewood|Burbank|North Hollywood|Hollywood|Covina|Glendale|Pomona|Santa Monica|Baldwin Park|Sylmar|Rosemead|San Gabriel|El Monte|Montebello|Monterey Park|Pasadena|Culver City|Marina del Rey|Beverly Hills|Whittier|La Mirada|Santa Fe Springs|City of Industry|Alhambra|Arcadia|Azusa|West Covina|Universal City|Calabasas|Westlake Village|Santa Clarita|Van Nuys|Woodland Hills|Sherman Oaks|Long Beach|Downey|Norwalk|La Habra|Fullerton|Anaheim|Santa Ana|Irvine|Newport Beach|Garden Grove|Cypress|Brea|Costa Mesa|Tustin|Laguna.*|Rancho Cucamonga|Ontario|Fontana|Riverside|Simi Valley|Thousand Oaks|Ventura|Oxnard|Los Alamitos|Seal Beach|Redondo Beach|Manhattan Beach|Hermosa Beach|Palos Verdes.*|San Pedro|Canoga Park|Chatsworth|Panorama City|Sun Valley|Encino|Tarzana|Reseda|Northridge|Granada Hills|Mission Hills|San Fernando|South Gate|Compton|Gardena|Carson|Hawthorne|Lawndale)$'
 
 $isps = New-Object System.Collections.Generic.List[string]
 $cities = New-Object System.Collections.Generic.List[string]
@@ -52,7 +48,7 @@ foreach ($g in ($rows | Group-Object prefix)) {
              elseif ($r.PSObject.Properties['o2'] -and "$($r.o2)" -ne "") { [int]$r.o2 }
              else { [int](($r.query -split '\.')[1]) }
         if ($o -lt 0 -or $o -gt 255) { continue }
-        $codes[$o] = [string]($CODE[$r.Cat] + $(if ($r.city -match $MetroRx) { 8 } else { 0 }))
+        $codes[$o] = [string]$CODE[$r.Cat]
         $is[$o]    = Idx $isps   $ispIdx  $r.isp
         $ci[$o]    = Idx $cities $cityIdx $r.city
     }
@@ -68,9 +64,7 @@ foreach ($g in ($rows | Group-Object prefix)) {
 $data = [ordered]@{
     generated = $Generated
     source    = "ip-api.com free (ASN/org/hosting/proxy/mobile/geo)"
-    legend    = "c[x] 类别码: 1住宅ISP 2机房/云 3商业中转/机构 4移动 6其他; +8 表示定位在$MetroNameZh; x = 第二段(0-255)"
-    # 标记区域的名字与 ★ 标记：数据决定，前端照着渲染（换都会区不用改代码）
-    metro     = [ordered]@{ tag = $MetroTag; zh = $MetroNameZh; en = $MetroNameEn }
+    legend    = "c[x] 类别码: 1住宅ISP 2机房/云 3商业中转/机构 4移动 6其他; x = 第二段(0-255)"
     isps      = $isps
     cities    = $cities
     prefixes  = $prefixes

@@ -2,10 +2,11 @@
  * core.js —— IP 段清洗 + 住宅纯净度判定核心（零依赖，浏览器 / Node 通用）
  *
  * 数据包结构（data/segments-data.js）：
- *   { generated, source, legend, isps[], cities[], metro{ tag, zh, en },
+ *   { generated, source, legend, isps[], cities[],
  *     prefixes{ "198.*.42": { o1, o3, c, i, g } } }
- *   c[x] = 类别码：1 住宅ISP / 2 机房·云 / 3 商业中转·机构 / 4 移动 / 6 其他；+8 = 标记区域位
+ *   c[x] = 类别码：1 住宅ISP / 2 机房·云 / 3 商业中转·机构 / 4 移动 / 6 其他
  *   x = 第二段(0-255)，即 /24 下标；i[] / g[] 为 isps / cities 索引
+ *   注：老数据包里类别码上还挂过一位 +8（扫描时的都会区标记），2026-10 已删，见下面 ASN_CONF_CAP 后的说明
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) { module.exports = factory(); }
@@ -27,10 +28,11 @@
      典型翻车例子：177.202.126.0/24 挂在 AS4766（Korea Telecom）下，整段其实是
      「Ace Data Centers II, LLC」的机房段 —— 光看 ASN 只会判成住宅。 */
   var ASN_CONF_CAP = 0.9;
-  /* 标记区域位（metro）：数据包扫描时定位在某个都会区的网段带这一位。
-     名字、★ 标记都写在数据包自己的 metro 里（见 tools/make-data.ps1）——
-     换一个都会区只改数据和流水线，这里和前端都不用动。 */
-  var METRO_BIT = 8;
+  /* 类别码就是低 3 位那 5 个值。老数据包曾在这一位上再挂一个 +8（扫描时那个 /24
+     被 ip-api 定位在洛杉矶都会区），2026-10 连同整套「都会区标记」一起删掉了 ——
+     那一位只来自每个 /24 探的**一个**地址（scan-prefixes.ps1 用 x.1 探测），
+     单点推整块，却当着排序键的第 4 位，实测 53 行里有 32 行的名次由它决定。
+     数据包已重新生成，不再有这一位；这里 & 7 只是照旧取类别。 */
   /* 第 4 段打码（82.24.73.*）= 这个网段的可用主机地址 1–254
      （.0 是网络地址、.255 是广播地址，都不是能拿的主机） */
   var HOST_LO = 1, HOST_HI = 254;
@@ -67,7 +69,12 @@
       .replace(/[^\S\r\n]*\.[^\S\r\n]*/g, ".")
       .replace(/[，、；]/g, " ")
       .replace(/[（(]/g, " ")
-      .replace(/[）)]/g, " ");
+      .replace(/[）)]/g, " ")
+      /* `/` 既是 CIDR 的一部分（198.3.242.0/24），也是清单里常见的分隔符（10.0.0.1 / 127.0.0.1）。
+         判据：**斜杠后面跟不出掩码位数**（/24 这种）就是分隔符 → 换成空格；跟得出就原样留给 CIDR。
+         别写成「斜杠+空白折成一个斜杠」—— 那样斜杠前面的空格会被一起吃掉，
+         `10.0.0.1 / 127.0.0.1` 反而粘成 `10.0.0.1/127.0.0.1` 一个 token。 */
+      .replace(/\/(?!\d{1,2}(?![\d.]))/g, " ");
   }
 
   /* ---------- 2. 解析：整段粘贴 → 模式列表 + 未识别行报告 ---------- */
@@ -78,6 +85,10 @@
     for (var i = 0; i < lines.length; i++) {
       var t = lines[i].trim();
       if (!t) { blank++; continue; }
+      /* 注释行整行丢掉（# 开头，或 // 开头的说明）。不丢的话，注释里的「1.」「2.」
+         经段间空格归一后会变成像 IP 的东西，进了解析又认不出，最后以「未识别」的样子
+         出现在结果里 —— 明明是我们自己让用户写注释的，不能反过来报他的行有问题。 */
+      if (/^[#]|^\/\//.test(t)) { continue; }
       if (!/\d/.test(t)) { continue; }                 // 表头 / “提取” / 纯文字行
       if (/^[#\-\s=*_.]+$/.test(t)) { continue; }
       // 整行既没有点也没有星号时，只可能是“空格分隔的四段”，否则按界面噪声丢弃
@@ -85,58 +96,68 @@
       if (!/[.*]/.test(t) &&
           !/(^|\s)(\d{1,3}|\*)\s+(\*|\d{1,3})\s+(\d{1,3}|\*)\s+(\d{1,3}|\*)(\s|$)/.test(t)) { continue; }
 
+      /* 一行一个 IP 是常态，但一行里摆好几个也常见（「10.0.0.1 / 127.0.0.1」这种）。
+         token 逐个认，**收几个出几行** —— 只认第一个会让后面那些无声无息地消失。
+         分词**不能**把 `/` 当分隔符：那样 `198.3.242.0/24` 会被切成地址 + "24"，
+         CIDR 展开就没了。分隔用的斜杠在 normalize 里已经是孤立的 `/`（单独一个 token，
+         认不出来自然跳过），CIDR 的斜杠粘在地址上，原样留给 CIDR 规则。 */
       var toks = t.split(/[\s,\t|;]+/).filter(Boolean);
-      var found = null, isCidr = false;
+      var foundList = [], sawCidr = false;
 
       for (var j = 0; j < toks.length; j++) {
         var tk = toks[j].replace(/^[`'"]+|[`'"]+$/g, "").replace(/:\d{1,5}$/, "");   // 去引号/端口
-        if (CIDR.test(tk)) { found = tk; isCidr = true; break; }
-        if (TOKEN.test(tk)) { found = tk; break; }
+        if (CIDR.test(tk)) { foundList.push(tk); sawCidr = true; continue; }
+        if (TOKEN.test(tk)) { foundList.push(tk); continue; }
         /* 换一种写法再认一遍：打码位写成 ? 或 x（198.?.42.81），
            两个以上星号折成一个（198.**.42.81 这种野写法）。 */
         var q = tk.replace(/\?/g, "*").replace(/[xX×]/g, "*").replace(/\*{2,}/g, "*");
-        if (CIDR.test(q)) { found = q; isCidr = true; break; }
-        if (TOKEN.test(q)) { found = q; break; }
+        if (CIDR.test(q)) { foundList.push(q); sawCidr = true; continue; }
+        if (TOKEN.test(q)) { foundList.push(q); continue; }
         // 还被 Markdown 强调符包着 / 紧贴着说明文字
         var mc = q.match(BOLD_CIDR);
-        if (mc) { found = mc[1]; isCidr = true; break; }
+        if (mc) { foundList.push(mc[1]); sawCidr = true; continue; }
         var mt = q.match(BOLD_TOKEN);
-        if (mt) { found = mt[1]; break; }
+        if (mt) { foundList.push(mt[1]); continue; }
       }
 
-      if (!found) {                                     // 退路：空格分隔的四段
+      /* 退路：空格分隔的四段（198 3 181 59）—— 整行一个 token 都没认出来时才用，
+         否则「10.0.0.1 127.0.0.1」会被它拼成一个假地址。 */
+      if (!foundList.length && !sawCidr) {
         var m2 = t.match(/(^|\s)(\d{1,3}|\*)\s+(\*|\d{1,3})\s+(\d{1,3}|\*)\s+(\d{1,3}|\*)(\s|$)/);
-        if (m2) { found = [m2[2], m2[3], m2[4], m2[5]].join("."); }
+        if (m2) { foundList.push([m2[2], m2[3], m2[4], m2[5]].join(".")); }
       }
-      if (!found) { unmatched.push({ line: i + 1, text: t }); continue; }
+      if (!foundList.length) { unmatched.push({ line: i + 1, text: t }); continue; }
 
-      var patterns;
-      if (isCidr) {
-        var mm = found.match(CIDR);
-        var bits = +mm[5], o1 = +mm[1], o2 = +mm[2], o3 = +mm[3], n;
-        patterns = [];
-        if (bits < 16) {
-          unmatched.push({ line: i + 1, text: t + "  (小于 /16 暂不支持)" });
-          continue;
+      /* 每个认出来的写法展开成 /24 模式，同一个写法在一行里出现多次只算一条 */
+      var lineCidrBad = false;
+      for (var f = 0; f < foundList.length; f++) {
+        var found = foundList[f];
+        var patterns;
+        if (CIDR.test(found)) {
+          var mm = found.match(CIDR);
+          var bits = +mm[5], o1 = +mm[1], o2 = +mm[2], o3 = +mm[3], n;
+          patterns = [];
+          if (bits < 16) { lineCidrBad = true; continue; }
+          /* 粒度统一到 /24（跟打码位一样）：一个 CIDR 展开成它覆盖的那些 /24，
+             /16 → 256 个，/20 → 16 个，/24 及更长（都落在同一个网段里）→ 1 个。
+             地址按无符号 32 位算，第 4 段落在哪都不影响 /24 —— 不做 o3+1 那种进位。 */
+          var base = ((o1 << 24) | (o2 << 16) | (o3 << 8)) >>> 0;
+          n = bits >= 24 ? 1 : Math.min(Math.pow(2, 24 - bits), 256);
+          for (var k = 0; k < n; k++) {
+            var a = (base + k * 256) >>> 0;
+            patterns.push(((a >>> 24) & 255) + "." + ((a >>> 16) & 255) + "." + ((a >>> 8) & 255) + ".*");
+          }
+        } else {
+          patterns = [found];
         }
-        /* 粒度统一到 /24（跟打码位一样）：一个 CIDR 展开成它覆盖的那些 /24，
-           /16 → 256 个，/20 → 16 个，/24 及更长（都落在同一个网段里）→ 1 个。
-           地址按无符号 32 位算，第 4 段落在哪都不影响 /24 —— 不做 o3+1 那种进位。 */
-        var base = ((o1 << 24) | (o2 << 16) | (o3 << 8)) >>> 0;
-        n = bits >= 24 ? 1 : Math.min(Math.pow(2, 24 - bits), 256);
-        for (var k = 0; k < n; k++) {
-          var a = (base + k * 256) >>> 0;
-          patterns.push(((a >>> 24) & 255) + "." + ((a >>> 16) & 255) + "." + ((a >>> 8) & 255) + ".*");
-        }
-      } else {
-        patterns = [found];
-      }
 
-      for (var p = 0; p < patterns.length; p++) {
-        if (seen[patterns[p]]) { duplicates++; continue; }
-        seen[patterns[p]] = 1;
-        items.push({ index: items.length + 1, sourceLine: i + 1, raw: t, pattern: patterns[p] });
+        for (var p = 0; p < patterns.length; p++) {
+          if (seen[patterns[p]]) { duplicates++; continue; }
+          seen[patterns[p]] = 1;
+          items.push({ index: items.length + 1, sourceLine: i + 1, raw: t, pattern: patterns[p] });
+        }
       }
+      if (lineCidrBad) { unmatched.push({ line: i + 1, text: t + "  (小于 /16 暂不支持)" }); }
     }
     return { items: items, unmatched: unmatched, duplicateCount: duplicates, blankLines: blank, lineCount: lines.length };
   }
@@ -150,7 +171,7 @@
     var res = {
       pattern: pattern, ok: false, reason: "", tier: "", tierText: "", found: false, starPos: -1,
       host4: null, singleHost: false, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 6: 0 },
-      pctIsp: 0, dcHeavy: false, candidates: [], metroCount: 0, host24: null
+      pctIsp: 0, dcHeavy: false, candidates: [], host24: null
     };
     var parts = String(pattern).split(".");
     if (parts.length !== 4) { res.reason = "不是 4 段格式"; return res; }
@@ -176,14 +197,12 @@
 
     var codes = String(p.c).split(","), ispsArr = String(p.i).split(","), citiesArr = String(p.g).split(",");
     var lo = (o2 === null) ? 0 : o2, hi = (o2 === null) ? 255 : o2;
-    /* 落在标记区域里的网段数：图例那行「有没有圈」和排序都用它，所以和热度图同一把尺子 ——
-       数的是这一行画出来的那些网段里有几个带 +8 位（不是只数住宅候选段）。 */
     for (var x = lo; x <= hi; x++) {
       var codeX = +codes[x] || 0;
+      /* & 7 取类别（老数据包在类别码上挂过一位都会区标记，已删，见文件头说明） */
       var base = codeX & 7;
       if (res.counts[base] === undefined) { base = 6; }
       res.counts[base]++;
-      if (codeX & METRO_BIT) { res.metroCount++; }
     }
     res.sampled = hi - lo + 1;
     /* 第 4 段打码：这一段是「这个网段的 254 个可用地址」。
@@ -201,7 +220,7 @@
     if (o2 !== null) {
       var codeS = +codes[o2] || 0;
       res.host24 = {
-        o2: o2, cat: codeS & 7, metro: !!(codeS & METRO_BIT),
+        o2: o2, cat: codeS & 7,
         city: data.cities[+citiesArr[o2]] || "", isp: data.isps[+ispsArr[o2]] || "",
         network: res.o1 + "." + o2 + "." + res.o3 + ".0/24"
       };
@@ -232,8 +251,7 @@
           ip: res.o1 + "." + y + "." + res.o3 + "." + res.host4,
           network: res.o1 + "." + y + "." + res.o3 + ".0/24",
           city: cCity,
-          isp: data.isps[+ispsArr[y]] || "",
-          metro: !!(code & METRO_BIT)
+          isp: data.isps[+ispsArr[y]] || ""
         };
         res.candidates.push(cand);
       }
@@ -241,14 +259,53 @@
     return res;
   }
 
+  /* 有没有人在公网宣告这个地址。IP 归属表把「没人宣告」明确记成 AS0 / Not routed ——
+     私有段（10./192.168.）、环回（127.）、链路本地（169.254.）、CGNAT（100.64.）、
+     文档段（192.0.2. 这类）、组播，以及确实还没被宣告的真段，全都落在这一条上。
+     它们本来就不是「住宅占比低」，是这个问题对它没意义：没人宣告，就不可能是住宅 IP。 */
+  function isRouted(pattern, world) {
+    if (!world || !world.asnOf) { return function () { return { routed: true }; }; }
+    var parts = String(pattern).split(".");
+    var star = -1;
+    for (var i = 0; i < 4; i++) { if (parts[i] === "*") { star = i; } }
+    if (star < 0) { return function () { return { routed: !!world.asnOf(parts.join(".")).asn }; }; }
+    /* 打码行：枚举样本里只要有一个地址被宣告过就算「有人宣告」 */
+    return function () {
+      for (var y = 0; y < 256; y++) {
+        var q = parts.slice();
+        q[star] = String(y);
+        if (world.asnOf(q.join(".")).asn) { return { routed: true }; }
+      }
+      return { routed: false };
+    };
+  }
+
   /* 单行判定：实测数据优先；这里没有这个网段时交给 IP 归属表（任意 IPv4 都能回答）。
      单独抽出来是给页面用的 —— 页面要按帧分批算，中间好把进度画出来（analyzeMany 是一口气算完）。 */
   function analyzeItem(item, data, opts) {
     opts = opts || {};
     var r = analyze(item.pattern, data);
+    var routedFn = isRouted(item.pattern, opts.world);
     if (!r.ok && opts.world && opts.world.ready && opts.world.ready()) {
       var g = analyzeGlobal(item.pattern, { world: opts.world, city: opts.cityPack || null });
       if (g.ok) { r = g; } else if (!r.reason) { r.reason = g.reason; }
+    }
+    /* 地址根本没被宣告：不判、不排、不计分，只如实说它不可路由。
+       判定那一步可能已经写下 tier/pctIsp 之类的中间值，一并清掉 ——
+       留着一个「X 级」会让人以为它是判过但没数据，而不是根本没得判。 */
+    if (!routedFn().routed) {
+      r.ok = false;
+      r.reserved = true;
+      r.reason = "不可路由";
+      r.tier = "";
+      r.tierText = "";
+      r.pctIsp = null;
+      r.counts = { 1: 0, 2: 0, 3: 0, 4: 0, 6: 0 };
+      r.sampled = 0;
+      r.candidates = [];
+      r.host24 = null;
+    } else if (r.reserved) {
+      delete r.reserved;
     }
     r.index = item.index;
     r.sourceLine = item.sourceLine;
@@ -365,14 +422,15 @@
 
   /* ---------- 3b. IP 归属表判定：查不到实测数据时的兜底，靠“任意 IP → ASN”的段表 + 城市数据 ----------
      打码位同样要把 256 种取值枚举完，但结论仍然落回整行。
-     ASN 层是估算：同一 ASN 内既有住宅池也有企业段，所以出的级别标 approx，行上标 source。 */
+     ASN 层是估算：同一 ASN 内既有住宅池也有企业段，所以出 approx=true 且 source="全球ASN"，
+     页面靠这两项把「估算」这条路认出来（「来源」列写 IP 归属表，就是它）。 */
   function analyzeGlobal(pattern, opts) {
     opts = opts || {};
     var world = opts.world, city = opts.city || null;
     var res = {
       pattern: pattern, ok: false, reason: "", tier: "", tierText: "", found: true, starPos: -1,
       host4: null, singleHost: false, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 6: 0 },
-      pctIsp: 0, dcHeavy: false, candidates: [], metroCount: 0,
+      pctIsp: 0, dcHeavy: false, candidates: [],
       host24: null, source: "全球ASN", approx: true, asnHist: {}, homeShare: 0
     };
     if (!world || !world.ready || !world.ready()) { res.reason = "IP 归属表没加载"; return res; }
@@ -410,7 +468,7 @@
       res.sampled = 1;
       res.asnHist[e0.asn] = 1;
       res.host24 = {
-        o2: +parts[1], cat: e0.t, metro: false, city: c0, isp: e0.name,
+        o2: +parts[1], cat: e0.t, city: c0, isp: e0.name,
         network: parts[0] + "." + parts[1] + "." + parts[2] + ".0/24",
         asn: e0.asn, prob: p0
       };
@@ -446,7 +504,7 @@
     var to = res.starPos === 3 ? HOST_HI : 255;
     var span = to - from + 1;
     if (res.starPos === 3) { res.hostRange = HOST_LO + "-" + HOST_HI; }
-    var sumP = 0, hardIsp = 0, covered = 0, cityCounts = {};
+    var sumP = 0, hardIsp = 0, covered = 0, cityCounts = {}, calCount = 0, priorCount = 0;
     for (var x = from; x <= to; x++) {
       var q = parts.slice();
       q[res.starPos] = String(x);
@@ -456,6 +514,10 @@
       var pRaw = world.prob(entry);
       var p = Math.min(pRaw, ASN_CONF_CAP);
       if (pRaw > ASN_CONF_CAP) { res.capped = true; }
+      /* 这个地址的住宅概率是「按样本折算」还是「只按关键词类型给的先验」？
+         标定样本够（>=MIN_CALIB）才算折算过的；不够的只有先验，那一档的百分比
+         是个常数（类型 1 → 100%，其余 → 5%），跟这些地址实际怎样无关。 */
+      if (world.calibrated && world.calibrated(entry.asn)) { calCount++; } else { priorCount++; }
       /* 一个段里 256 个取值可能落在不同 ASN 上，逐一加权 */
       res.counts[entry.t] = (res.counts[entry.t] || 0) + 1;
       if (p > 0) { hardIsp++; }
@@ -467,7 +529,7 @@
       if (p > 0) {
         res.candidates.push({
           ip: ip, network: ip.split(".").slice(0, 3).join(".") + ".0/24",
-          city: cityName, isp: entry.name, metro: false,
+          city: cityName, isp: entry.name,
           asn: entry.asn, prob: Math.round(100 * p) / 100
         });
       }
@@ -484,6 +546,11 @@
     /* IP 归属表的「住宅个数」是概率加权出来的（254 个地址 × 0.9），不是实测计数，
        UI 要按概率显示，别写成「229/254」 */
     res.probOnly = true;
+    /* 一个标定样本都没有 → 这个百分比纯粹是关键词类型先验摊出来的常数
+       （类型 1 → 254 × 90% = 90%，其余 → 254 × 5% ≈ 5%），
+       不是「这 254 个地址里有几个住宅」。UI 遇到它就不写百分比，改写类别。
+       实测：13,568 个 /24 里 743 行是这种，而且全都是同一个数 90%。 */
+    res.priorOnly = calCount === 0 && priorCount > 0;
     var share = res.homeShare;
     if (share >= 0.586) { res.tier = "A"; res.tierText = "住宅为主（按运营商估算）"; }
     else if (share >= 0.234) { res.tier = "B"; res.tierText = "住宅+商业混合（按运营商估算）"; }
@@ -543,7 +610,6 @@
 
   function sortCandidates(list) {
     return list.slice().sort(function (a, b) {
-      if (a.metro !== b.metro) { return a.metro ? -1 : 1; }
       if (a.city !== b.city) { return a.city < b.city ? -1 : 1; }
       return a.ip < b.ip ? -1 : 1;
     });
@@ -615,10 +681,31 @@
     if (!r || !r.probOnly) { return String(Math.round(v)); }
     return String(Math.round(v * 10) / 10);
   }
+  /* 这一行有没有标定样本支撑：没有 → 那个百分比是常数值，不该当占比写出来 */
+  function priorOnly(r) {
+    if (!r || !r.probOnly) { return false; }
+    return r.priorOnly === true;
+  }
+  /* 先验行改写类别时用哪一类：这一行里个数最多的那个（类别才是真数过的）。
+     返回类别号，UI 拿它取语义色；homeTxt 再用它取中文名。 */
+  function topCat(r) {
+    var c = (r && r.counts) || {}, best = 6, bestN = -1;
+    [1, 3, 2, 4, 6].forEach(function (k) {
+      var v = c[k] || 0;
+      if (v > bestN) { bestN = v; best = k; }
+    });
+    return best;
+  }
+  function topCatName(r) { return CAT_NAME[topCat(r)] || "未知"; }
   function homeTxt(r) {
+    if (r && r.reserved) { return "不可路由"; }
     if (r && r.singleHost) {
       return "单个 IP · " + (CAT_NAME[r.host24 ? r.host24.cat : 6] || "未知");
     }
+    /* 纯类型先验：百分比是常数（类型 1 一律 90%、其余约 5%），跟这 254/256 个地址
+       实际怎样无关 —— 写出来就是拿先验冒充占比。所以改写类别，跟单 IP 那条路一致。
+       实测 13,568 个 /24 里有 743 行是这种，而且全都是同一个数 90%。 */
+    if (priorOnly(r)) { return "按类型先验 · " + topCatName(r); }
     return (r && r.probOnly ? "≈" : "") + homeNum(r) + "/" + ((r && r.sampled) || 1) + " · " + homePct(r) + "%";
   }
 
@@ -630,7 +717,6 @@
         var sa = rowScore(a), sb = rowScore(b);
         if (sb !== sa) { return sb - sa; }
         if (b.pctIsp !== a.pctIsp) { return b.pctIsp - a.pctIsp; }
-        if ((b.metroCount || 0) !== (a.metroCount || 0)) { return (b.metroCount || 0) - (a.metroCount || 0); }
       }
       return String(a.pattern) < String(b.pattern) ? -1 : 1;
     });
@@ -639,33 +725,6 @@
       list[i].score = rowScore(list[i]);
     }
     return list;
-  }
-
-  /* 「建议拿」这一格：只给一个能直接拿的 IP —— 网段没法直接拿，给了也没用。
-     整行就是一个真实 IP → 就是它；
-     第 2 段打码 → 256 个取值排出来，给排最前的那个住宅落点；
-     整行是一整个网段（第 4 段打码 / 网段写法）→ 数据只到网段这一层，
-     里面哪个地址都一样，挑不出更该拿的，这一格就留空。 */
-  function takeIp(r) {
-    if (!r || !r.ok) { return ""; }
-    if (r.singleHost) { return String(r.pattern); }
-    if (r.starPos === 1) {
-      var c = sortCandidates(r.candidates)[0];
-      return c ? c.ip : "";
-    }
-    return "";
-  }
-  /* 上面那一格的口径：为什么是它，或者为什么没有 */
-  function takeWhy(r) {
-    if (!r || !r.ok) { return "这一行还没判定出来"; }
-    if (r.singleHost) { return "整行就这一个 IP，拿这个"; }
-    if (r.starPos === 1) {
-      var n = sortCandidates(r.candidates).length;
-      return n
-        ? "整行 " + n + " 个住宅落点里排最前的那个，其余在下面的热度图上"
-        : "整行枚举出的 " + (r.sampled || 256) + " 个落点里没有住宅段，这一行不给建议";
-    }
-    return "整行是一整个网段的 254 个可用地址，数据里它们没有差别，挑不出更该拿的那个";
   }
 
   /* 实测数据包是按 o1.*.o3 收录的：给出这个模式下要查的键（查不到就得走 IP 归属表） */
@@ -683,19 +742,19 @@
   /* 行级排名表（主产物）：一行 = 你粘贴的一行，不带具体枚举结果 */
   function toCsv(rows, tiers, perRow) {
     perRow = perRow || 3;
-    var out = [T("排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,建议拿的 IP,参考枚举IP(前" + perRow + ")")];
+    var out = [T("排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前" + perRow + ")")];
     rows.forEach(function (r) {
       if (!r.ok || (tiers && tiers.length && tiers.indexOf(r.tier) < 0)) { return; }
       var n = r.sampled || 0;
       var picks = sortCandidates(r.candidates).slice(0, perRow)
-        .map(function (c) { return c.ip + (c.metro ? "★" : ""); }).join(" / ");
+        .map(function (c) { return c.ip; }).join(" / ");
       out.push([
         r.rank || r.index, r.pattern, csvCell(cityLabel(r.city ? r.city.city : "")),
         r.country ? r.country.cc : "", r.tier, T(r.tierText),
         r.source || T("实测记录"), r.score,
-        csvCell(homeTxt(r)), homePct(r),
+        csvCell(homeTxt(r)), priorOnly(r) ? "" : homePct(r),
         pct(r.counts[2], n), pct(r.counts[3], n), pct(r.counts[4], n),
-        takeIp(r), csvCell(picks)
+        csvCell(picks)
       ].join(","));
     });
     return out.join("\n");
@@ -704,36 +763,37 @@
   /* 枚举明细（附件产物）：一行 = 打码模式下某一种第 2 段取值的落点 */
   function toCsvCandidates(rows, tiers, perRow) {
     perRow = perRow || 25;
-    var out = [T("排名,IP模式,枚举IP,城市,运营商,类别,都会区标记")];
+    var out = [T("排名,IP模式,枚举IP,城市,运营商,类别")];
     rows.forEach(function (r) {
       if (!r.ok || (tiers && tiers.length && tiers.indexOf(r.tier) < 0)) { return; }
       if (r.singleHost) {
         out.push([r.rank || r.index, r.pattern, r.pattern, csvCell(r.host24.city),
-                  csvCell(r.host24.isp), T(CAT_NAME[r.host24.cat] || ""), r.host24.metro ? 1 : 0].join(","));
+                  csvCell(r.host24.isp), T(CAT_NAME[r.host24.cat] || "")].join(","));
         return;
       }
       sortCandidates(r.candidates).slice(0, perRow).forEach(function (c) {
         out.push([r.rank || r.index, r.pattern, c.ip, csvCell(c.city),
-                  csvCell(c.isp), T(CAT_NAME[1]), c.metro ? 1 : 0].join(","));
+                  csvCell(c.isp), T(CAT_NAME[1])].join(","));
       });
     });
     return out.join("\n");
   }
 
   return {
-    CAT: CAT, CAT_NAME: CAT_NAME, METRO_BIT: METRO_BIT,
+    CAT: CAT, CAT_NAME: CAT_NAME,
     ASN_CONF_CAP: ASN_CONF_CAP,
     normalize: normalize, parseWithReport: parseWithReport, parseInput: parseInput,
     isValidPattern: isValidPattern, analyze: analyze, analyzeGlobal: analyzeGlobal,
     analyzeItem: analyzeItem, analyzeMany: analyzeMany, countRows: countRows,
     applyOnline: applyOnline,
     sortCandidates: sortCandidates, toCsv: toCsv, toCsvCandidates: toCsvCandidates,
-    rankRows: rankRows, rowScore: rowScore, takeIp: takeIp, takeWhy: takeWhy,
+    rankRows: rankRows, rowScore: rowScore,
     scoreBand: scoreBand,
     patternKey: patternKey,
     countryHist: countryHist, cityHist: cityHist,
     cityLabel: cityLabel,
     homeTxt: homeTxt, homeNum: homeNum, homePct: homePct, shareBand: shareBand,
+    priorOnly: priorOnly, topCat: topCat,
     shareWidths: shareWidths, catCount: catCount
   };
 });

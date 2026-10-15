@@ -92,8 +92,7 @@ for (const p of patterns) {
       : `  ${r.hostRange ? "住宅主机" : "住宅 /24"} ${r.counts[1]}/${r.sampled} (${r.pctIsp}%)`) +
     `  机房 ${r.counts[2]}  商业 ${r.counts[3]}  移动 ${r.counts[4]}` +
     (r.city && r.city.city ? `  城市 ${Core.cityLabel(r.city.city)}（${r.city.count}/${r.city.n} 个取值）` : ""));
-  /* 建议拿只给一个能直接拿的 IP —— 命令行里把它连同口径一起印出来 */
-  console.log(`  建议拿 ${Core.takeIp(r) || "—"}   得分 ${Core.rowScore(r)}（${Core.takeWhy(r)}）`);
+  console.log(`  得分 ${Core.rowScore(r)}`);
   if (r.capped) {
     console.log(`  注：ASN 级估算，占比按上限封顶 ${Math.round(Core.ASN_CONF_CAP * 100)}%（同一 ASN 里可能有对方机房的段）`);
   }
@@ -114,7 +113,6 @@ for (const p of patterns) {
   }
   const cands = Core.sortCandidates(r.candidates).slice(0, top);
   for (const c of cands) {
-    console.log(`  → ${c.ip}  ${Core.cityLabel(c.city)}${c.city ? " · " : ""}${c.isp}` +
-      `${c.metro ? "  [" + ((data.metro && data.metro.zh) || "标记区域") + "]" : ""}`);
+    console.log(`  → ${c.ip}  ${Core.cityLabel(c.city)}${c.city ? " · " : ""}${c.isp}`);
   }
 }

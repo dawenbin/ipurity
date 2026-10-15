@@ -166,17 +166,10 @@
   ENTRIES.push(
     [/行 ([\d]+) · /, "Row $1 · "],
     [/复制本行候选/, "Copy this row's candidates"],
-    [/建议拿/, "Take"],
     [/第 4 段是打码位：按这个网段的 254 个可用地址（1–254）统计，\.0 网络地址 \/ \.255 广播地址已跳过/,
       "The 4th octet is masked: counted over this /24's 254 usable addresses (1–254); .0 (network) and .255 (broadcast) are skipped"],
-    /* 建议拿那一格的口径（core.js 拼的 title）：给的是哪个 IP，或者为什么给不出来 */
-    [/整行就这一个 IP，拿这个/, "this row is a single IP — take it"],
-    [/整行 ([\d,]+) 个住宅落点里排最前的那个，其余在下面的热度图上/,
-      "the top one of this row's $1 residential hosts; the rest are on the heat map below"],
-    [/整行枚举出的 ([\d,]+) 个落点里没有住宅段，这一行不给建议/,
-      "no residential host among the $1 values this row enumerates, so nothing is suggested"],
-    [/整行是一整个网段的 254 个可用地址，数据里它们没有差别，挑不出更该拿的那个/,
-      "this row is one /24's 254 usable addresses — the data cannot tell them apart, so there is no single pick"],
+    /* 不可路由：公网没人宣告这个地址（IP 归属表记成 AS0 / Not routed） */
+    [/不可路由/, "Unroutable"],
     [/住宅 0%（联网核验判定为机房）/, "residential 0% (online check says datacenter)"],
     [/住宅 ≈([\d,]+)\/([\d,]+) · ([\d.]+)%/, "residential ≈$1/$2 · $3%"],
     [/住宅 /, "residential "],
@@ -184,6 +177,8 @@
     [/占比已按 ASN 级不确定性封顶：抽样再干净也不代表这个网段一定干净 —— 同一个 ASN 下就有对方机房\/企业客户的段（例如 177\.202\.126\.0\/24 挂在 KT 下面，但整段是 Ace Data Centers 的机房）。/,
       "The share is capped because of ASN-level uncertainty: a clean sample does not make this /24 clean — the same ASN also holds other parties' datacenter and enterprise blocks (e.g. 177.202.126.0/24 sits under KT but the whole block belongs to Ace Data Centers)."],
     [/单个 IP/, "single IP"],
+    /* 纯类型先验：一个标定样本都没有，百分比是常数 → 改写类别 */
+    [/按类型先验 · /, "typed as "],
     [/清单里的这一行就是一个真实 IP，没有占比可言，直接看它归哪一类；下面那张图画的是它所在网段的 254 个可用地址。/,
       "This row is a single real IP, so there is no share to speak of — it is just classified. The map below covers the 254 usable addresses of the /24 it sits in."],
     [/你粘贴的这一行是一个真实 IP，样本只有它自己 —— 没有占比可言，直接看它归哪一类/,
@@ -316,7 +311,6 @@
     [/已复制本行 ([\d,]+) 个枚举落点/, "copied $1 enumerated hosts from this row"],
     [/复制失败，请手动选中/, "copy failed — select the text manually"],
     [/排名 #/, "rank #"],
-    [/建议拿 /, "take "],
     [/城市数据都到位了/, "all city data is in"],
     [/补了 ([\d]+) 份城市数据/, "loaded $1 more city data files"],
     [/重拉城市数据失败：/, "re-fetching city data failed: "],
@@ -381,15 +375,14 @@
 
   /* ---------- 导出 CSV 的表头 / 复制出去的文本（不经过 DOM，得单独翻） ---------- */
   ENTRIES.push(
-    [/排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,建议拿的 IP,参考枚举IP\(前([\d]+)\)/,
-      "Rank,IP pattern,Main city,Main country,Tier,Tier note,Source,Score,Residential,Residential %,Datacenter %,Business %,Mobile %,Suggested IP,Reference hosts (top $1)"],
-    [/排名,IP模式,枚举IP,城市,运营商,类别,都会区标记/,
-      "Rank,IP pattern,Host IP,City,Carrier,Category,Metro"],
-    [/排名\tIP模式\(整行\)\t级别\t说明\t得分\t住宅\t建议拿的 IP/,
-      "Rank\tIP pattern (whole row)\tTier\tNote\tScore\tResidential\tSuggested IP"],
+    [/排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP\(前([\d]+)\)/,
+      "Rank,IP pattern,Main city,Main country,Tier,Tier note,Source,Score,Residential,Residential %,Datacenter %,Business %,Mobile %,Reference hosts (top $1)"],
+    [/排名,IP模式,枚举IP,城市,运营商,类别/,
+      "Rank,IP pattern,Host IP,City,Carrier,Category"],
+    [/排名\tIP模式\(整行\)\t级别\t说明\t得分\t住宅/,
+      "Rank\tIP pattern (whole row)\tTier\tNote\tScore\tResidential"],
     [/\t得分 /, "\tscore "],
     [/\t住宅 /, "\tresidential "],
-    [/\t建议拿 /, "\ttake "],
   );
 
   /* ---------- 标点兜底 ---------- */

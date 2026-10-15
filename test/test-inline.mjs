@@ -132,7 +132,28 @@ check("普通文字里的 IP 照样认（加粗规则不掺和）", plainText.it
 check("认出来的是 IP，不是被加粗规则截出来的半截", plainText.items.map(i => i.pattern).join(",") === "1.2.3.4,198.3.242.16",
   plainText.items.map(i => i.pattern).join(","));
 
-/* 行尾那个点不能把换行一起吃掉：\s 版本会把下一行粘上来，下一行的 IP 就无声无息少一个 */
+/* 一行里摆好几个 IP：**收几个出几行**。只认第一个会让后面那些无声无息地消失
+   （真实踩过：10 个 IP 粘成 4 行，结果只出 2 行）。斜杠、逗号、空格、竖线都是分隔符。 */
+const multi = [
+  ["10.0.0.1 / 127.0.0.1 / 192.168.1.1", "10.0.0.1,127.0.0.1,192.168.1.1", "斜杠分隔"],
+  ["8.8.8.8, 1.1.1.1, 73.45.128.9", "8.8.8.8,1.1.1.1,73.45.128.9", "逗号分隔"],
+  ["198.*.42.81 82.24.73.*", "198.*.42.81,82.24.73.*", "空格分隔（打码行也要全收）"],
+  ["8.8.8.8 | 1.1.1.1", "8.8.8.8,1.1.1.1", "竖线分隔"],
+  ["10.0.0.1 / 10.0.0.1 / 10.0.0.1", "10.0.0.1", "同一行重复只算一条"]
+];
+for (const [input, want, why] of multi) {
+  const got = Core.parseWithReport(input + "\n");
+  check(`一行多个 IP：${why}`, got.items.map(i => i.pattern).join(",") === want,
+    `期望 ${want} 实得 ${got.items.map(i => i.pattern).join(",") || "(没识别)"}`);
+}
+/* 分隔用的斜杠不能把 CIDR 的斜杠也切了 —— 这条判据最容易写错 */
+const cidr2 = Core.parseWithReport("198.3.242.0/24\n10.0.0.1 / 192.168.1.1\n");
+check("斜杠既是 CIDR 也是分隔符，两边都不能错",
+  cidr2.items.map(i => i.pattern).join(",") === "198.3.242.*,10.0.0.1,192.168.1.1",
+  cidr2.items.map(i => i.pattern).join(","));
+check("行尾那个分隔用的斜杠不影响前面", Core.parseWithReport("8.8.8.8 / 1.1.1.1 /\n").items.length === 2,
+  Core.parseWithReport("8.8.8.8 / 1.1.1.1 /\n").items.map(i => i.pattern).join(","));
+
 const nl = Core.parseWithReport("**111.169.14.1**BIGLOBE Inc.\n**111.169.14.2**BIGLOBE Inc.\n**111.169.14.3**BIGLOBE Inc.\n");
 check("行尾带点的运营商名不会与下一行粘连", nl.items.length === 3,
   `${nl.items.length} 条：` + nl.items.map(i => i.pattern).join(","));
@@ -153,6 +174,85 @@ check("IPv6 / 域名 / 界面文案都不当成 IPv4", noise.items.length === 0,
   noise.items.map(i => i.pattern).join(","));
 check("4 段以上（最像 IP 的噪声）记进未识别，不静默消失", noise.unmatched.length === 1 && noise.unmatched[0].line === 4,
   noise.unmatched.map(u => u.line + ":" + u.text).join(" | ") || "(无)");
+
+/* ---------- 不可路由：一条规则 —— 公网没人宣告（IP 归属表记成 AS0 / Not routed） ----------
+   私有段、环回、链路本地、CGNAT、文档段、组播全都落在这一条上，它们不是「住宅占比低」，
+   是这个问题对它没意义。判定层直接说不可路由，不参与排名与得分。 */
+{
+  const W = require("../assets/sources.js");
+  W.putPack(readFileSync(new URL("../data/global-pack.bin", import.meta.url)));
+  W.setMeta(JSON.parse(readFileSync(new URL("../data/global-asn.js", import.meta.url), "utf8")
+    .match(/window\.GLOBAL_ASN\s*=\s*([\s\S]*?);?\s*$/)[1]));
+  const cal = readFileSync(new URL("../data/asn-calib.js", import.meta.url), "utf8")
+    .match(/window\.ASN_CALIB\s*=\s*([\s\S]*?);?\s*$/);
+  if (cal) { W.setCalib(JSON.parse(cal[1])); }
+
+  const mk = (ips) => Core.analyzeMany(ips.map((p, i) => ({ index: i + 1, sourceLine: i + 1, raw: p, pattern: p })),
+    null, { world: W }).rows;
+
+  /* 该判不可路由的：私有 / 环回 / 链路本地 / CGNAT / 未分配 / 文档段 / 组播 */
+  const notRouted = ["10.0.0.1", "172.16.0.1", "192.168.1.1", "127.0.0.1", "169.254.1.1",
+    "100.64.1.1", "0.0.0.0", "224.1.1.1", "192.0.2.5", "198.51.100.7", "203.0.113.9", "198.18.0.1"];
+  const nr = mk(notRouted);
+  const bad = nr.filter(r => r.ok || !r.reserved);
+  check("没人宣告的地址一律判不可路由（12 个）", bad.length === 0,
+    bad.map(r => r.pattern + " ok=" + r.ok + " reserved=" + r.reserved).join(" | ") || "全部命中");
+  check("不可路由不给级别、不给占比",
+    nr.every(r => !r.ok && !r.tier && Core.homeTxt(r) === "不可路由"),
+    nr.map(r => r.pattern + ":" + Core.homeTxt(r)).join(" "));
+  check("不可路由的得分是 0（不参与得分）", nr.every(r => Core.rowScore(r) === 0),
+    nr.slice(0, 3).map(r => Core.rowScore(r)).join(","));
+
+  /* 真地址一个都不能误伤 —— 这条规则最容易伤到的就是「像保留但其实是真的」 */
+  const routed = ["8.8.8.8", "1.1.1.1", "73.45.128.9", "198.3.243.16", "198.*.42.81", "82.24.73.*"];
+  const ro = mk(routed);
+  const wrong = ro.filter(r => !r.ok || r.reserved);
+  check("真地址不会被判成不可路由", wrong.length === 0,
+    wrong.map(r => r.pattern + ":" + r.reason).join(" | ") || ro.map(r => r.pattern + "=" + r.tier).join(" "));
+
+  /* 排名与统计：不可路由只占「未识别/缺数据」那一格，不进 A/B/C/D */
+  const all = Core.rankRows(mk(notRouted.concat(routed)));
+  const counts = Core.countRows(all);
+  check("不可路由不计入 A/B/C/D 任何一档",
+    counts.A + counts.B + counts.C + counts.D === ro.filter(r => r.ok).length,
+    JSON.stringify(counts));
+  check("不可路由算进「未识别/缺数据」，数字才对得上总数",
+    counts.fail === notRouted.length && Object.values(counts).reduce((a, b) => a + b, 0) === all.length,
+    `fail=${counts.fail} 合计=${Object.values(counts).reduce((a, b) => a + b, 0)} 总行=${all.length}`);
+  check("不可路由排在最末（不占推荐位）",
+    all.slice(-notRouted.length).every(r => r.reserved),
+    all.slice(-4).map(r => r.rank + ":" + r.pattern).join(" "));
+
+  /* 走整条判定链（analyzeItem）再看一次：真的 IP 不会被误判成不可路由 */
+  const viaItem = (p) => Core.analyzeItem({ index: 1, sourceLine: 1, raw: p, pattern: p }, null, { world: W });
+  check("单个私有地址走完判定链同样判不可路由", (() => {
+    const r = viaItem("10.1.2.3");
+    return !r.ok && r.reserved === true && r.reason === "不可路由";
+  })(), viaItem("10.1.2.3").reason);
+  check("单个公网地址走完判定链照常判出级别", (() => {
+    const r = viaItem("73.45.128.9");
+    return r.ok && !r.reserved && r.tier === "A";
+  })(), viaItem("73.45.128.9").tier + " " + viaItem("73.45.128.9").tierText);
+
+  /* 「这一行是估算还是实测」只由「来源」列一个信号传达：approx ⟺ source="全球ASN"。
+     以前级别列还挂一个「估算」徽标，那是同一件事说两遍（已删）。两条路各三个入口，
+     这里把六个入口的组合都钉住 —— 一旦哪个入口漏设 source，来源列就会把估算行
+     写成「实测记录」，那是最难发现的一类错。 */
+  const combos = [
+    ["实测打码", Core.analyze("198.*.42.81", data), false, "实测记录"],
+    ["实测单 IP", Core.analyze("198.3.243.16", data), false, "实测记录"],
+    ["实测第 4 段打码", Core.analyze("198.3.242.*", data), false, "实测记录"],
+    ["归属表打码", Core.analyzeGlobal("50.*.54.100", { world: W }), true, "IP 归属表"],
+    ["归属表单 IP", Core.analyzeGlobal("73.45.128.9", { world: W }), true, "IP 归属表"],
+    ["归属表第 4 段打码", Core.analyzeGlobal("82.24.73.*", { world: W }), true, "IP 归属表"]
+  ];
+  const mism = combos.filter(([, r, isEst, shown]) => {
+    const name = r.source === "全球ASN" ? "IP 归属表" : (r.source || "实测记录");
+    return r.ok && (!!r.approx !== isEst || name !== shown);
+  });
+  check("估算 ⟺ 来源列写「IP 归属表」（两条路六个入口都对齐）", mism.length === 0,
+    mism.map(([n]) => n).join(" | ") || combos.map(([n, r]) => n + "=" + (r.approx ? "估算" : "实测")).join(" "));
+}
 
 const t6 = Core.analyze("50.*.54.100", data);
 const t7 = Core.analyze("50.*.54.100", data, { city: "San Jose", wantCity: "Los Angeles" });
@@ -178,27 +278,14 @@ check("A 级内部按住宅占比降序", aRows.every((r, i) => i === 0 || aRows
 check("每行都有得分", ranked1.every((r) => typeof r.score === "number" && r.score >= 0 && r.score <= 100),
   ranked1.slice(0, 3).map((r) => r.score).join(","));
 check("行身份保持打码模式", ranked1[0].pattern.includes("*"), ranked1[0].pattern);
-/* 「建议拿」只给一个能直接拿的 IP —— 网段没法直接拿，给了也没用；
-   第 2 段打码给排最前的住宅落点，整行就是一个网段时留空（数据里那些地址没差别） */
-{
-  const rr = Core.analyze("198.*.42.81", data, {});
-  const ip = Core.takeIp(rr);
-  check("打码行的建议拿是一个具体 IP（不带 *、不是网段）",
-    /^\d+\.\d+\.\d+\.\d+$/.test(ip) && !ip.includes("*") && !ip.includes("/"), ip || "(空)");
-  check("建议拿就是排最前的那个候选落点", ip === Core.sortCandidates(rr.candidates)[0].ip, ip);
-  check("建议拿的口径写明它是排最前的住宅落点", /住宅落点里排最前的那个/.test(Core.takeWhy(rr)), Core.takeWhy(rr));
-  /* 挑不出住宅落点时给不出来，且说清为什么 —— 不能甩一个模式出去 */
-  const none = Object.assign({}, rr, { candidates: [] });
-  check("没有住宅落点时建议拿留空", Core.takeIp(none) === "", Core.takeIp(none) || "(空)");
-  check("留空时口径说明整行没有住宅段", /没有住宅段/.test(Core.takeWhy(none)), Core.takeWhy(none));
-  /* 判定失败的行没有建议拿这一说 */
-  const bad = Core.analyze("1.2.3.4.5", data, {});
-  check("没判定出来的行建议拿留空", !bad.ok && Core.takeIp(bad) === "" && /还没判定出来/.test(Core.takeWhy(bad)),
-    bad.reason + " | " + Core.takeWhy(bad));
-}
-
 const csv1 = Core.toCsv(ranked1, ["A", "B"], 3);
 const csvLines = csv1.split("\n");
+/* 「建议拿哪个 IP」这个字段已经拿掉了：工具只看到 /24 这一层，
+   挑不出「更该拿的那个」，给了就是假精确（详情面板第一格曾是它）。
+   守一道门：接口不再暴露，导出的 CSV 里也不该再有这一列。 */
+check("core 不再导出 takeIp / takeWhy", typeof Core.takeIp === "undefined" && typeof Core.takeWhy === "undefined",
+  `${typeof Core.takeIp} / ${typeof Core.takeWhy}`);
+check("排名表 CSV 没有「建议拿」这一列", !/建议拿/.test(csv1), csvLines[0]);
 const abRows = ranked1.filter((r) => r.tier === "A" || r.tier === "B").length;
 check("排名表 CSV 表头首列是“排名”", csvLines[0].split(",")[0] === "排名", csvLines[0].slice(0, 24));
 check("排名表一行一个模式", csvLines.length === abRows + 1, `实得 ${csvLines.length - 1} 行 / 期望 ${abRows} 行`);
@@ -215,13 +302,8 @@ check("枚举明细行数多于排名表", csvCand.split("\n").length > csvLines
   const r = Core.analyze("198.3.242.*", data, {});   // 实测记录里有 198.*.242
   check("第 4 段打码样本 = 254（跳过 .0/.255）", !!r.ok && r.sampled === 254 && r.hostRange === "1-254",
     r.ok ? `sampled=${r.sampled} hostRange=${r.hostRange}` : r.reason);
-  /* 整行就是一整个网段：数据只到网段这一层，里面哪个地址都一样，给不出「更该拿的那个」 */
-  check("整行一整个网段时建议拿留空", Core.takeIp(r) === "", Core.takeIp(r) || "(空)");
-  check("整行一段的口径写明挑不出来", /挑不出更该拿的那个/.test(Core.takeWhy(r)), Core.takeWhy(r));
-  /* 单个真实 IP：建议拿 = 它自己（不是它所在的 /24） */
+  /* 整行就是一整个网段 / 单个真实 IP：两种行都不再有「建议拿」这一格 */
   const rOne = Core.analyze("198.3.243.16", data, {});
-  check("单个 IP 的建议拿就是它自己", Core.takeIp(rOne) === "198.3.243.16", Core.takeIp(rOne) || "(空)");
-  check("单个 IP 的口径", /整行就这一个 IP/.test(Core.takeWhy(rOne)), Core.takeWhy(rOne));
 
   /* CIDR 写法应该跟第 4 段打码走同一条路 */
   const cidr = Core.parseInput("198.3.242.0/24")[0];
@@ -253,31 +335,38 @@ check("枚举明细行数多于排名表", csvCand.split("\n").length > csvLines
   }
 }
 
-/* ---------- 标记区域（metro）：名字/★ 在数据包里，位是 +8，不是洛杉矶专用 ---------- */
+/* ---------- 「都会区标记」整套功能已删除，这里守门防止它悄悄回来 ----------
+   删的原因：那个 +8 位只来自每个 /24 探的**一个**地址（scan-prefixes.ps1 用 x.1 探测），
+   单点推整块；它却是排序键的第 4 位，实测 53 行里有 32 行的名次由它决定。
+   没有依据让一个扫描副产品去决定「两行住宅质量相同」时谁排前面。 */
 {
-  const m = data.metro;
-  check("数据包带 metro 的名字与 ★ 标记", !!m && !!m.tag && !!m.zh && !!m.en, JSON.stringify(m));
-  /* 名字由数据渲染，不走词条表 —— 英文名里不能再有中文，否则英文界面会露出中文 */
-  check("metro 英文名不带中文", !!m && !/[\u4e00-\u9fa5]/.test(m.en), m && m.en);
-  check("/8 位还是 +8（换区域不动前端）", Core.METRO_BIT === 8, String(Core.METRO_BIT));
-  const withMetro = Object.keys(data.prefixes)
-    .map((k) => data.prefixes[k].c.split(",").filter((c) => (+c & Core.METRO_BIT)).length)
-    .reduce((a, b) => a + b, 0);
-  check("数据里真的有点上标记的网段", withMetro > 0, String(withMetro));
+  check("数据包不再带 metro 元数据块", !("metro" in data), Object.keys(data).join(","));
+  check("core 不再导出 METRO_BIT", typeof Core.METRO_BIT === "undefined", typeof Core.METRO_BIT);
+  /* 类别码只剩 5 个值（1/2/3/4/6）：数据里不该再有第 4 位被置起来的格子 */
+  const bits = new Set();
+  Object.keys(data.prefixes).forEach((k) => data.prefixes[k].c.split(",").forEach((c) => bits.add(+c)));
+  check("类别码只剩 1/2/3/4/6（没有 +8 残留）",
+    [...bits].every((v) => [1, 2, 3, 4, 6].indexOf(v) >= 0), [...bits].sort((a, b) => a - b).join(","));
+  check("数据包的 legend 也不再提 +8", !/\+8/.test(data.legend), data.legend);
+
+  /* 结果对象和候选里都不该再有 metro 字段 */
   const rr = Core.analyze("198.*.42.81", data, {});
-  /* 计数和热度图同一把尺子：这一行画出来的网段里有几个带 +8 位 */
-  const flagged = data.prefixes[rr.key].c.split(",").filter((c) => (+c & Core.METRO_BIT)).length;
-  check("带标记的网段数 = 热度图会画圈的格子数", rr.metroCount === flagged,
-    `metroCount=${rr.metroCount} / flagged=${flagged}`);
-  check("候选项自己也带 metro 位", rr.candidates.every((c) => typeof c.metro === "boolean"));
-  /* 候选里只要有一个带标记，它就得排在最前（先标记区域、再城市、再 IP） */
-  const candMetro = rr.candidates.filter((c) => c.metro).length;
-  const sorted = Core.sortCandidates(rr.candidates);
-  check("★ 候选排在前面", candMetro === 0 || sorted[0].metro === true,
-    `候选里带标记 ${candMetro} 个 / 排在最前 ${sorted[0] && sorted[0].ip}`);
-  check("同标记内不再乱序（城市 → IP）",
-    sorted.every((c, i) => i === 0 || !c.metro || sorted[i - 1].metro),
-    sorted.slice(0, 3).map((c) => c.ip + (c.metro ? "★" : "")).join(" "));
+  check("判定结果不再带 metroCount", !("metroCount" in rr), Object.keys(rr).join(","));
+  check("候选项不再带 metro 字段",
+    rr.candidates.every((c) => !("metro" in c)), JSON.stringify(rr.candidates[0] || {}));
+  check("host24 不再带 metro 字段", !("metro" in (rr.host24 || {})), JSON.stringify(rr.host24 || {}));
+  check("候选排序只剩「城市 → IP」", (() => {
+    const s = Core.sortCandidates(rr.candidates);
+    return s.every((c, i) => i === 0 || s[i - 1].city < c.city || (s[i - 1].city === c.city && s[i - 1].ip <= c.ip));
+  })(), Core.sortCandidates(rr.candidates).slice(0, 3).map((c) => c.ip).join(" "));
+  /* 排名表 CSV / 枚举明细 CSV 都不该再有「都会区标记」列 */
+  const ranked = Core.rankRows(Core.analyzeMany(
+    Core.parseWithReport("198.*.42.81\n50.*.54.100").items, data).rows);
+  check("排名表 CSV 没有都会区列", !/都会区/.test(Core.toCsv(ranked, null, 3)), Core.toCsv(ranked, null, 3).split("\n")[0]);
+  check("枚举明细 CSV 没有都会区列",
+    !/都会区/.test(Core.toCsvCandidates(ranked, null, 3)), Core.toCsvCandidates(ranked, null, 3).split("\n")[0]);
+  check("CSV 里不再出现 ★", !/★/.test(Core.toCsv(ranked, null, 3) + Core.toCsvCandidates(ranked, null, 3)),
+    "★ 只跟着标记功能存在");
 }
 
 console.log(fail === 0 ? "\n全部通过 ✅" : `\n${fail} 项失败 ❌`);

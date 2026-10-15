@@ -28,23 +28,14 @@
   function tone(t) { return "t-" + (t || "x"); }
   var TIER_TONE = { A: "g", B: "o", C: "b", D: "d", X: "x" };
 
-  /* 数据包里的「标记区域」（metro）：热力图上的角标、图例、★ 都读这一份 ——
-     换一个都会区只要改数据流水线，这里不用动。没有就说「标记区域」。 */
-  function metroCfg() {
-    var m = DATA && DATA.metro;
-    return (m && (m.zh || m.en)) ? m : { tag: "★", zh: "标记区域", en: "marked region" };
-  }
   function en() { return String((window.IPI18n && IPI18n.locale) ? IPI18n.locale() : "zh-CN").indexOf("en") === 0; }
-  function metroName() { var m = metroCfg(); return (en() ? m.en : m.zh) || m.zh || m.en; }
-  function metroTag() { return metroCfg().tag || "★"; }
-  /* 「落在 X 都会区」：名字来自数据，语言跟着界面走，所以拼在这里，不进词条表 */
-  function metroPhrase() { return en() ? " · lands in the " + metroName() : " · 落在" + metroName(); }
   /* 只有「跨多段的打码行」（第 2/3 段打码 = 256 个取值散在整个 /8）才谈得上分布：
      「256 个取值里有 218 个落在美国」是有信息量的；第 4 段打码是一个网段、单 IP 是一个地址，
      它们写「1/1 = 100%」只是噪声。 */
   function hasDist(r) { return (r.starPos === 1 || r.starPos === 2) && r.sampled > 1; }
-  /* 类型说明：级别那一格已经有「估算」徽标了，正文里不再重复「（按运营商估算）」 */
-  function tierTextShort(r) { return String(r.tierText || "").replace("（按运营商估算）", "").replace("（按运营商）", ""); }
+  /* 「这一行是估算还是实测」只在「来源」列说一次 —— 那张表里 来源 = IP 归属表 ⟺ approx = true，
+     两种状态一一对应，级别列再挂一个「估算」徽标就是同一件事说两遍。
+     级别列只留一个例外：不可路由的地址没人宣告，那不是「估算」，是根本没得判。 */
 
   /* 国旗用图片，不用 emoji：Windows 的 Segoe UI Emoji 里没有国旗字形，
      🇺🇸 会退成「US」两个字母（会跟「只显示中文名」的要求打架）。拿不到图就只剩中文名。 */
@@ -121,11 +112,6 @@
   }
 
   /* ---------- 数据包 ---------- */
-  /* 规则页里写「这个标记区域叫什么」的两处：名字来自数据包，切语言时重填一遍 */
-  function paintMetroNames() {
-    var els = document.querySelectorAll(".metroName");
-    for (var i = 0; i < els.length; i++) { els[i].textContent = metroName(); }
-  }
   function initData() {
     if (!DATA) {
       if ($("tableHost")) {
@@ -135,7 +121,6 @@
     var keys = Object.keys(DATA.prefixes || {});
     if ($("genAt")) { $("genAt").textContent = "数据包生成于 " + (DATA.generated || "?") + " · " + (DATA.source || ""); }
     }
-    paintMetroNames();
     initWorld();
   }
 
@@ -275,7 +260,7 @@
       chip("all", "", "全部", state.ranked.length, "显示全部行 · 排名按行（带 * 的整行一起排）") +
       chip("a", "a", "A 级", c.A || 0) + chip("b", "b", "B 级", c.B || 0) +
       chip("c", "c", "C 级", c.C || 0) + chip("d", "d", "D 级", c.D || 0) +
-      chip("x", "x", "未识别/缺数据", (c.fail || 0)) +
+      chip("x", "x", "未识别/缺数据", (c.fail || 0), "没判出来的行：不可路由的地址（没人宣告）+ 数据包里没有的段") +
       chip("ab", "", "推荐行 (A+B)", rec);
   }
   function chip(f, cls, k, v, tip) {
@@ -299,8 +284,11 @@
       '<th>来源</th><th>得分</th><th></th></tr></thead><tbody>';
     rows.forEach(function (r, i) {
       if (!r.ok) {
+        /* 不可路由不是「没判出来」：地址没人宣告，这个问题对它没意义，别摆成失败的样子 */
+        var badTier = r.reserved ? '<span class="tier X" title="公网没人宣告这个地址，不可路由，不参与排名与得分"><i></i>不可路由</span>'
+          : '<span class="tier X"><i></i>—</span>';
         html += '<tr data-i="' + r.index + '" class="rowin" style="animation-delay:' + Math.min(i * 12, 400) + 'ms">' +
-          '<td class="mono-s">' + r.rank + '</td><td><span class="tier X"><i></i>—</span></td>' +
+          '<td class="mono-s">' + r.rank + '</td><td>' + badTier + '</td>' +
           '<td><b>' + r.pattern + '</b></td><td colspan="5" class="mono-s">' + r.reason + '</td><td></td></tr>';
         return;
       }
@@ -322,14 +310,19 @@
          —— 实测记录给实测计数；IP 归属表是按 ASN 先验折算的（带 ≈）；单个真实 IP 的样本就是它自己（分母 1）。 */
       var homeTxt = Core.homeTxt(r);
       var homeTitle = r.probOnly
-        ? "IP 归属表：按 ASN 住宅先验对 " + r.sampled + " 个取值做概率加权折算（≈ 表示不是逐个实测），占比按 ASN 级不确定性封顶 90%"
+        ? (Core.priorOnly(r)
+          ? "这一行的 " + r.sampled + " 个取值一个标定样本都没有：数字只能按 ASN 关键词类型给先验" +
+            "（判为零售 ISP 就一律 100%），是个常数，跟这些地址实际怎样无关 —— 所以这里写类别，不写占比"
+          : "IP 归属表：按 ASN 住宅先验对 " + r.sampled + " 个取值做概率加权折算（≈ 表示不是逐个实测），占比按 ASN 级不确定性封顶 90%")
         : (r.singleHost ? "你粘贴的这一行是一个真实 IP，样本只有它自己 —— 没有占比可言，直接看它归哪一类"
           : "实测记录：住宅网段数 / 样本数 · 占比");
+      /* 颜色跟着「这一格的数是哪种数」走：单 IP 和纯先验行没有占比，颜色跟类别；
+         有折算依据的行才按住宅占比分档。这里只借语义色的 t-* 上色 —— 别再挂 sc：
+         那是得分那一格的字号，两条规则撞上这一格的 13px 会被顶成 14px/700。 */
+      var catTone = CAT_TONE[r.host24 ? r.host24.cat : 6];
+      if (Core.priorOnly(r)) { catTone = CAT_TONE[Core.topCat(r)]; }
       var ispCell = '<div class="tcell"><div class="stack">' + stack + '</div>' +
-        /* 单个 IP 没有占比，颜色跟着它的类别走；打码行才按住宅占比分档。
-           这里只借语义色的 t-* 上色 —— 别再挂 sc：那是得分那一格的字号，
-           两条规则撞上，这一格的 13px 会被顶成 14px/700。 */
-        '<span class="share t-' + (r.singleHost ? CAT_TONE[r.host24 ? r.host24.cat : 6] : Core.shareBand(Core.homePct(r))) + '" title="' + esc(homeTitle) + '">' +
+        '<span class="share t-' + (r.singleHost || Core.priorOnly(r) ? catTone : Core.shareBand(Core.homePct(r))) + '" title="' + esc(homeTitle) + '">' +
         esc(homeTxt) + '</span></div>';
       /* 来源列只说「这份判断的数据从哪来」；核验结论是另一回事，附在悬停里，不往来源上贴 */
       var srcText = rowSrcWhy(r) + (r.online
@@ -340,8 +333,7 @@
       var srcCell = '<span title="' + esc(srcText) + '">' + rowSrcName(r) + "</span>";
       html += '<tr data-i="' + r.index + '" class="rowin' + (state.active === r.index ? " active" : "") + '" style="animation-delay:' + Math.min(i * 12, 400) + 'ms">' +
         '<td class="mono-s"><b>' + r.rank + '</b></td>' +
-        '<td><span class="tier ' + r.tier + '"><i></i>' + r.tier +
-          (r.approx ? '<span class="est" title="IP 归属表估算：只看得到 ASN，级别是上限">估算</span>' : "") + '</span></td>' +
+        '<td><span class="tier ' + r.tier + '"><i></i>' + r.tier + '</span></td>' +
         /* 级别药丸和「住宅」那一格已经说清是不是机房，不再往 IP 上贴第三个标签 */
         '<td><b>' + r.pattern + '</b></td>' +
         '<td>' + ispCell + '</td>' +
@@ -425,17 +417,15 @@
     var vHome = r.singleHost ? "" : "住宅 " + Core.homeTxt(r);
     if (r.online && r.online.verdict === "DC") { vHome = "住宅 0%（联网核验判定为机房）"; }
     var verdict = '<div class="verdict ' + tone(tierTone) + '">' +
-      '<b class="v1">' + r.tier + (r.approx ? '<span class="est" title="实测记录里没有这一行，级别是用 IP 归属表推的（上限）">估算</span>' : "") + "</b>" +
-      "<b class=\"v1\">" + esc(tierTextShort(r)) + "</b>" +
+      '<b class="v1">' + r.tier + "</b>" +
+      "<b class=\"v1\">" + esc(r.tierText) + "</b>" +
       (vHome ? '<span class="v2">' + esc(vHome) + "</span>" : "") +
       '<span class="scpill" title="行级得分 0–100（离线分级算出）">得分 <b class="sc ' + Core.scoreBand(r.score) + '">' + r.score + "</b></span>" +
       "</div>";
-    /* 定义格：标签一列对齐，值一列 —— 不再是一串挤在一起的行内文本 */
+    /* 定义格：标签一列对齐，值一列 —— 不再是一串挤在一起的行内文本。
+       这里只放「有数据支撑的事实」：来源、口径、得分。不摆「建议拿哪个 IP」——
+       工具只看到 /24 这一层，挑不出更该拿的那个，给了就是假精确。 */
     var defs = [];
-    /* 建议拿：只给一个能直接拿的 IP（打码行给排最前的住宅落点），挑不出就给不出来 */
-    var take = Core.takeIp(r);
-    defs.push(["建议拿", '<b class="net" title="' + esc(Core.takeWhy(r)) + '">' +
-      esc(take || "—") + "</b>", ""]);
     defs.push(["来源", rowSrcName(r), rowSrcWhy(r)]);
     /* 说明统一成一句话：<口径> · <数据源>［，<分布>］。
        分布只在真的枚举过多个取值时给 —— 单个 IP / 单个网段写它没有意义。 */
@@ -457,8 +447,7 @@
         r.probOnly
           ? "IP 归属表 · 按运营商估算：这个网段归 " + (r.host24.asn ? "AS" + r.host24.asn + " " : "") +
             Core.CAT_NAME[r.host24.cat] + "，占比按 ASN 先验折算（不是逐段实测）"
-          : "实测记录（ip-api）· " + r.host24.network + " 整段归 " + Core.CAT_NAME[r.host24.cat] +
-            (r.host24.metro ? metroPhrase() : "")]);
+          : "实测记录（ip-api）· " + r.host24.network + " 整段归 " + Core.CAT_NAME[r.host24.cat]]);
     }
     /* 构成条：表格那一列的放大版 —— 同一套颜色、同一套宽度算法，段上直接写名字/个数/占比。
        窄到写不下的段交给下面那行图例（每个数字只有一个出处，不重复第二遍）。 */
@@ -522,13 +511,7 @@
     /* 这一行是不是 IP 归属表算出来的：用 asnHist 判断，别用 source —— 联网核验会把
        source 改成「联网核验」，但枚举/热力图还是 IP 归属表那套数据 */
     var fromGlobal = !!(r.asnHist && Object.keys(r.asnHist).length);
-    /* 颜色含义由上面那条构成条负责（名字就在段上）；图例只补热力图自己的标记 */
-    /* 图例只解释那个角标：底色给中性的米色，别让人把标记和格子里的类别色混起来。
-       metroCount 就是「这一行画出来的网段里有几个带标记」，和上面热度图同一把尺子。 */
-    var legend = (r.metroCount || 0)
-      ? '<div class="legend"><span><i class="mk" style="background:var(--unk)"></i>' +
-        esc(metroName()) + "</span></div>"
-      : "";
+    /* 颜色含义由上面那条构成条负责（名字就在段上），热力图不再另外加图例 */
     var body;
     /* 单个真实 IP 这一行就是一个地址，图里画的是它所在的那整个网段（254 个可用地址）——
        跟「第 4 段打码」同一种画法：这一行的结论本来就来自这个网段的记录。 */
@@ -549,7 +532,6 @@
       var asns = Object.keys(hist).map(function (a) { return [a, hist[a]]; })
         .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 6);
       body = '<div class="heat" id="heat"></div>' +
-        legend +
         '<p class="mono-s" style="margin-top:8px">ASN 分布 · ' + (histN || 256) + ' 个取值</p>' +
         '<div class="cands asn">' + asns.map(function (p) {
           var e = World && World.byNumber ? World.byNumber(p[0]) : null;
@@ -567,8 +549,7 @@
               ? '<span class="mono-s">覆盖 ' + r.covered + "/" + (r.sampled || 256) + "</span>" : "") + "</div>"
           : "");
     } else {
-      body = '<div class="heat" id="heat"></div>' +
-        legend;
+      body = '<div class="heat" id="heat"></div>';
     }
 
     var cands = Core.sortCandidates(r.candidates);
@@ -611,11 +592,11 @@
         for (var y = hLo; y <= hHi; y++) {
           /* 一个网段一格：实测记录按 /24 存，索引是打码那一位的「段内序号」 */
           var idx = one24 ? r.host24.o2 : y;
-          var code = +codes[idx] || 0, cat = code & 7, metro = !!(code & Core.METRO_BIT);
+          var code = +codes[idx] || 0, cat = code & 7;
           var city = DATA.cities[+cities[idx]] || "", isp = DATA.isps[+isps[idx]] || "";
           var ip2 = one24 ? r.o1 + "." + r.host24.o2 + "." + r.o3 + "." + y : r.o1 + "." + y + "." + r.o3 + ".1";
-          h += cell(ip2, (CATCLS[cat] || "") + (metro ? " mk" : ""), y,
-            Core.cityLabel(city), isp, T(Core.CAT_NAME[cat] || "未知") + (metro ? " · " + metroTag() : ""));
+          h += cell(ip2, CATCLS[cat] || "", y,
+            Core.cityLabel(city), isp, T(Core.CAT_NAME[cat] || "未知"));
         }
       }
       $("heat").innerHTML = h;
@@ -624,7 +605,7 @@
     $("closeD").onclick = closeDetail;
     if ($("copyRow")) {
       $("copyRow").onclick = function () {
-        copy(T("排名 #" + r.rank + "  " + r.pattern + "  [" + r.tier + " " + r.tierText + "]  建议拿 " + Core.takeIp(r)) + "\n" +
+        copy(T("排名 #" + r.rank + "  " + r.pattern + "  [" + r.tier + " " + r.tierText + "]  住宅 " + Core.homeTxt(r)) + "\n" +
           cands.map(function (c) { return c.ip + "  " + Core.cityLabel(c.city) + "  " + c.isp; }).join("\n"),
           "已复制本行 " + cands.length + " 个枚举落点");
       };
@@ -855,11 +836,10 @@
     state.ranked.forEach(function (r) {
       if (!r.ok || (r.tier !== "A" && r.tier !== "B")) { return; }
       out.push("#" + r.rank + "\t" + r.pattern + "\t" + r.tier + "\t" + r.tierText +
-        T("\t得分 ") + r.score + T("\t住宅 ") + Core.homeTxt(r) +
-        T("\t建议拿 ") + Core.takeIp(r));
+        T("\t得分 ") + r.score + T("\t住宅 ") + Core.homeTxt(r));
     });
     if (!out.length) { toast("没有 A/B 级结果"); return; }
-    copy(T("排名\tIP模式(整行)\t级别\t说明\t得分\t住宅\t建议拿的 IP") + "\n" + out.join("\n"),
+    copy(T("排名\tIP模式(整行)\t级别\t说明\t得分\t住宅") + "\n" + out.join("\n"),
       "已复制 A/B 级排名（一行一个）");
   }
 
@@ -1022,7 +1002,6 @@
   /* 切中英文：表格里的国家名是 Intl 按语言现算的，词条表管不到，所以整块重画一遍。
      其它文字（表格标题、报告面板、提示）由 i18n.js 的观察器就地替换，不用重画。 */
   document.addEventListener("ipurity:lang", function () {
-    paintMetroNames();
     if (!state.ranked.length) { return; }
     renderChips();
     renderTable();

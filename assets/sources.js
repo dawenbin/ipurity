@@ -225,6 +225,10 @@
     putPack: putPack, setMeta: setMeta, setCalib: setCalib, load: load,
     asnOf: asnOf, prob: prob, lookup: lookup, coverage: coverage,
     byNumber: byNumber, probOfNumber: probOfNumber,
+    /* 这个 ASN 有没有「够用的标定样本」：有 → prob() 是按实测 /24 折算的；
+       没有 → prob() 只是关键词类型先验（类型 1 给 100%，其余 5%），那一档的百分比是常数。
+       UI 靠它决定「写百分比」还是「只写类别」——先验摊出来的数不该冒充占比。 */
+    calibrated: function (asn) { var c = calib[asn]; return !!(c && c[0] >= MIN_CALIB); },
     ready: ready, hasPack: hasPack, hasMeta: hasMeta,
     packed: function () { return packed; },
     calib: function () { return { info: calibInfo, entries: Object.keys(calib).length }; },

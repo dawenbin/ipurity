@@ -5,13 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- build 戳：静态托管的 CDN 会缓存 js/数据包，改完资源就把它改一下，
      脚本 src 与 ?v= 都指向它，避免「新 HTML + 旧 JS」这种半新半旧的状态 -->
-<meta name="build" content="20261015h">
+<meta name="build" content="20261015o">
 <title>iPurity · 批量甄别住宅 IP</title>
 <meta name="description" content="iPurity：把一批 IP 段（含 130.*.253.66 这种带 * 的写法）粘进网页，就能看出哪些属于住宅 IP。订阅 AI 服务、开跨境电商店铺、运营社媒多账号都用得上，全部在浏览器里算，不装软件、不上传。">
 <!-- 图标：SVG 优先（任意尺寸都清晰），.ico / PNG 兜底给不认 SVG 图标的浏览器与 iOS 主屏 -->
-<link rel="icon" href="favicon.ico?v=20261015h" sizes="32x32 48x48">
-<link rel="icon" type="image/svg+xml" href="assets/icon.svg?v=20261015h" sizes="any">
-<link rel="apple-touch-icon" href="assets/icon-180.png?v=20261015h">
+<link rel="icon" href="favicon.ico?v=20261015o" sizes="32x32 48x48">
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg?v=20261015o" sizes="any">
+<link rel="apple-touch-icon" href="assets/icon-180.png?v=20261015o">
 <style>
   :root{
     --paper:#f5f2ec; --panel:#fffdf8; --ink:#14161a; --muted:#6a7080;
@@ -23,8 +23,7 @@
     --ink-28:rgba(20,22,26,.28); --ink-50:rgba(20,22,26,.50);
     /* 全站只有这 5 个语义色，级别 / 构成 / 得分共用一个含义，不另外发明颜色：
        绿 = 住宅·好 · 橙 = 移动·中等 · 蓝灰 = 商业/机构 · 红 = 机房·差 · 米 = 未知/没数据
-       （--isp/--dc/--biz/--mob 是同一批色在构成条里的叫法）
-       标记区域（metro，见 .mk）不占颜色格 —— 颜色都留给类别。 */
+       （--isp/--dc/--biz/--mob 是同一批色在构成条里的叫法） */
     --a:#0f766e; --b:#b45309; --c:#3f5673; --d:#b3261e;
     --isp:var(--a); --dc:var(--d); --biz:var(--c); --mob:var(--b); --unk:#c9c3b6;
     /* 每个语义色的描边 / 淡底 / 悬停底：药丸、左边条、选中行统一用这几档 */
@@ -183,8 +182,6 @@
     padding:3px 8px;background:var(--field);font-size:var(--fs-s)}
   .cchip em{font-style:normal;color:var(--muted);font-size:var(--fs-xs)}
   .mono-s{color:var(--muted);font-size:var(--fs-s)}
-  /* 规则页正文里的 ★：只是个标记，不上色（颜色都留给类别） */
-  .metro{font-weight:700}
 
   /* 详情 / 单 IP 报告 = 右侧抽屉，不把页面撑长（一屏原则） */
   /* 从页头下沿开始，不遮住数据来源徽标 */
@@ -233,12 +230,6 @@
   .sc.g{color:var(--a)} .sc.o{color:var(--b)} .sc.b{color:var(--c)} .sc.d{color:var(--d)} .sc.x{color:var(--muted)}
   .sc.pill{padding:2px 6px;border:1px solid currentColor;border-radius:var(--r);background:var(--ink-03)}
   .heat i.isp{background:var(--isp)} .heat i.dc{background:var(--dc)} .heat i.biz{background:var(--biz)} .heat i.mob{background:var(--mob)}
-  /* 标记区域：格子右上角一个墨色小三角 + 悬停里的 ★。
-     不用第 6 种颜色 —— 底色是类别色，三角是标记，两件事不抢，深底浅底都看得见。
-     换一个都会区只换数据（名字与 ★ 标记都在数据包里）。 */
-  .mk{position:relative}
-  .mk::after{content:"";position:absolute;top:0;right:0;border:3px solid transparent;
-    border-top-color:var(--ink);border-right-color:var(--ink)}
   /* 热力格子的悬浮详情：IP 一行加粗，城市/运营商、类别各一行 —— 格子里塞不下的都摊在这儿 */
   #tip{position:fixed;z-index:20;display:none;pointer-events:none;max-width:340px;padding:6px 9px;
     background:var(--panel);border:1px solid var(--ink);border-radius:var(--r);box-shadow:var(--shadow);
@@ -249,7 +240,6 @@
   .legend{display:flex;flex-wrap:wrap;gap:10px;margin:8px 0 0;font-size:var(--fs-s);color:var(--muted)}
   .legend span{display:inline-flex;align-items:center;gap:5px}
   .legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
-  .legend i.mk::after{border-width:2px}   /* 图例里的三角跟着缩一号 */
   /* 不再自己带滚动条：抽屉里只留 .dscroll 一条（嵌套滚动条会把滚轮抢走，滚动看着像卡住）。
      列表本来就截了前 40 条，长不到哪去。 */
   .cands{border:1px solid var(--rule);border-radius:var(--r);background:var(--field)}
@@ -393,7 +383,7 @@ Markdown 的加粗也认（**198.*.42.81**，或者加粗紧贴着运营商名�
       <li><b>红线</b>：<code>hosting=true</code> / <code>proxy=true</code> 直接判机房；Verizon Business / Level 3 / Cogent / NTT / AT&amp;T Enterprises 这类商业中转 ASN 归 C/D —— 它们常常"代理·VPN·托管三否"，但风控视作代理段，<b>"三否"不等于住宅 IP</b>。</li>
       <li><b>三层数据，各管一段</b>：<b>实测记录</b> = 53 组 <code>o1.*.o3</code>（13,568 个网段）用 ip-api.com 逐个查过，最准，但只覆盖这些段；<b>IP 归属表</b> = iptoasn 的全球归属数据（53.9 万条，网上在用的 IP 全收录）＋ PeeringDB ＋ bad-asn-list —— 任何 IP 都查得到，但只到 ASN（运营商）这一层，级别是<b>上限</b>；<b>城市数据</b> = DB-IP City Lite（CC BY 4.0），IP → 城市 / 国家，按 IP 第一段分片加载。</li>
       <li><b>标定库</b>：大型混合 ASN（AT&amp;T Enterprises / Verizon Business / Amazon / Level 3 / Cogent…）内部既有住宅池也有企业段，只按 ASN 判会虚高；工具用实测记录的 1 万多个网段反推每个 ASN 的住宅占比（<code>asn-calib.js</code>）把它压下去。</li>
-      <li><b>排序</b>：先级别、再得分、再住宅占比、再扫描时落在标记区域里的网段数；行内候选段也是先 <span class="metro">★</span>、再城市、再 IP。<span class="metro">★</span> = 实测记录里这一条被 ip-api 定位在<b class="metroName"></b>（扫描时的实测记录，不是你清单里写的城市）。标记区域写在数据包里，换一个都会区不用改页面。</li>
+      <li><b>排序</b>：先级别、再得分、再住宅占比；行内候选段按城市、再按 IP。</li>
       <li><b>「判定」= 离线分级</b>：只拉本站数据文件，不发任何请求。<b>「联网核验」= 整行抽样</b>：默认不点就不发，只做推荐行（A/B 级）前 12 行，每行按打码位置抽 3 个 IP 发给 <code>ipwho.is</code> / <code>ip-api</code>（整张清单不上传），抽到机房即整行改判 D；失败只标注，不动原来的级别。</li>
       <li><b>「实测取证」= 单个 IP 的联网核查</b>：在行详情里点它，只查<b>这一行的代表 IP</b>。五个来源各自独立、谁失败都不影响别人：<code>rdap.org</code>（注册局注册记录）· DoH 反向解析 PTR · Team Cymru（DoH TXT 查 origin ASN）· <code>stat.ripe.net</code> RIPEstat（另一条 BGP 视图，与 Cymru 互相印证）· Shodan InternetDB（扫到的端口 / 漏洞 / 标签，404 = 没有记录）。查不到就写「未获取」，不填占位数字。</li>
       <li><b>主要国家 / 主要城市</b>：一整行可能有多个取值（打码位展开后 254/256 个），这两列给的是<b>取值最多的那个</b>。国家优先用城市数据的 <b>IP 定位国</b>，城市数据还没加载时退回 IP 归属表的 <b>ASN 注册国</b>（登记在 A 国、实际用在 B 国很常见）。悬停写明用的是哪一个、占多少取值，其余落点在详情里列出来。清单里写的国家和城市一律不看，城市只作参考。</li>
@@ -408,7 +398,7 @@ Markdown 的加粗也认（**198.*.42.81**，或者加粗紧贴着运营商名�
         <li><b>Red lines</b>: <code>hosting=true</code> or <code>proxy=true</code> means datacenter. Carrier-transit ASNs such as Verizon Business / Level 3 / Cogent / NTT / AT&amp;T Enterprises are ranked C/D — they often show hosting, proxy and VPN all “false”, yet risk engines treat them as proxy blocks. <b>“All false” does not make a residential IP.</b></li>
         <li><b>Three data layers</b>: <b>measured records</b> = 53 <code>o1.*.o3</code> groups (13,568 /24 blocks) looked up one by one via ip-api.com — the most accurate, but it only covers those blocks; <b>IP owner table</b> = iptoasn's worldwide ownership data (539k entries, every in-use IP) plus PeeringDB and bad-asn-list — any IP resolves, but only down to the ASN, so the tier is an <b>upper bound</b>; <b>city data</b> = DB-IP City Lite (CC BY 4.0), IP → city/country, loaded per first octet.</li>
         <li><b>Calibration</b>: large mixed ASNs (AT&amp;T Enterprises / Verizon Business / Amazon / Level 3 / Cogent…) hold both residential pools and enterprise blocks, so judging by the ASN alone inflates the score. The tool infers each ASN's residential share from the 10k+ measured /24 blocks (<code>asn-calib.js</code>).</li>
-        <li><b>Sorting</b>: tier, then score, then residential share, then how many /24 blocks ip-api located in the marked region when it scanned; candidate blocks inside a row are ordered <span class="metro">★</span> first, then city, then IP. <span class="metro">★</span> = the measured records located that record in <b class="metroName"></b> (a scan record, not a city written in your list). The marked region lives in the data pack, so switching metro needs no page change.</li>
+        <li><b>Sorting</b>: tier, then score, then residential share; candidate blocks inside a row are ordered by city, then IP.</li>
         <li><b>“Judge” = offline tiering</b>: it only loads this site's own data files and sends no requests. <b>“Online check” = sampled per row</b>: nothing is sent unless you press it; it covers the first 12 recommended (tier A/B) rows, sends 3 IPs per row (picked by the masked position) to <code>ipwho.is</code> / <code>ip-api</code> — your whole list is never uploaded — and one datacenter hit flips the row to tier D. Failures are only annotated; the original tier stays.</li>
         <li><b>“Live lookup” = one IP, online</b>: press it in a row's detail panel and only <b>that row's representative IP</b> is queried. Five independent sources — one failing never affects the others: <code>rdap.org</code> (registry record) · DoH reverse DNS (PTR) · Team Cymru (origin ASN over DoH TXT) · <code>stat.ripe.net</code> RIPEstat (a second BGP view that cross-checks Cymru) · Shodan InternetDB (scanned ports / CVEs / tags; 404 means “no record”). Anything unavailable is written as “not fetched”, never a placeholder.</li>
         <li><b>Main country / Main city</b>: a row can hold many values (254/256 after expanding the mask), and these two columns show the <b>most common one</b>. Country prefers the <b>IP-location country</b> from the city data and falls back to the <b>ASN registration country</b> from the IP owner table while that block's city data is still loading (registered in country A, used in country B is common). The tooltip says which one was used and how many values it covers; the remaining landing points are listed in the detail panel. Countries and cities written in your list are ignored entirely, and the city is a hint only.</li>
@@ -425,14 +415,14 @@ Markdown 的加粗也认（**198.*.42.81**，或者加粗紧贴着运营商名�
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="data/segments-data.js?v=20261015h"></script>
-<script src="assets/i18n.js?v=20261015h"></script>
-<script src="assets/core.js?v=20261015h"></script>
-<script src="assets/city.js?v=20261015h"></script>
-<script src="assets/online.js?v=20261015h"></script>
-<script src="assets/enrich.js?v=20261015h"></script>
-<script src="assets/report.js?v=20261015h"></script>
-<script src="assets/sources.js?v=20261015h"></script>
-<script src="assets/app.js?v=20261015h"></script>
+<script src="data/segments-data.js?v=20261015o"></script>
+<script src="assets/i18n.js?v=20261015o"></script>
+<script src="assets/core.js?v=20261015o"></script>
+<script src="assets/city.js?v=20261015o"></script>
+<script src="assets/online.js?v=20261015o"></script>
+<script src="assets/enrich.js?v=20261015o"></script>
+<script src="assets/report.js?v=20261015o"></script>
+<script src="assets/sources.js?v=20261015o"></script>
+<script src="assets/app.js?v=20261015o"></script>
 </body>
 </html>
