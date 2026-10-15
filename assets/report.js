@@ -54,8 +54,8 @@
     return '<div class="rcell ' + (tn ? "t-" + tn : "") + '"><span class="rk">' + esc(k) + '</span>' +
       '<span class="rv">' + v + "</span>" + (src ? '<span class="rsrc">' + src + "</span>" : "") + "</div>";
   }
-  var ASN_TONE = { 1: "g", 2: "r", 3: "n", 4: "w", 6: "x" };
-  function shareTone(p) { return p >= 58 ? "g" : p >= 23 ? "w" : p > 0 ? "n" : "r"; }
+  var ASN_TONE = { 1: "g", 2: "d", 3: "b", 4: "o", 6: "x" };
+  function shareTone(p) { return p >= 58 ? "g" : p >= 23 ? "o" : p > 0 ? "b" : "d"; }
   /* 每条证据自己带一个「结论色」，颜色 = 这条证据把这一行往哪边推，不是「有没有值」：
        绿 = 往住宅方向推 · 橙 = 移动/可疑 · 蓝灰 = 商业·机构 · 红 = 机房/代理 · 灰 = 没查到或中性。
      一台好 IP 不该整列全灰（那是「没证据」的颜色），所以：
@@ -107,7 +107,7 @@
     if (en.rdap && en.rdap.ok) {
       var r = en.rdap;
       var holder = [r.name].concat(r.entities || []).join(" ");
-      var rdapTone = rdapDc ? "r" : (sameOrg(holder, org) ? "g" : "x");
+      var rdapTone = rdapDc ? "d" : (sameOrg(holder, org) ? "g" : "x");
       out.push(cell("RDAP 注册记录",
         "<b>" + esc(r.name || "（无 name 字段）") + "</b>" +
         (r.entities.length ? " · " + esc(r.entities.join(" / ")) : "") +
@@ -136,8 +136,8 @@
       var asnPf = (cy && cy.prefix) || (rs && rs.prefix) || "";
       var asnMeta = [asnPf, cy && cy.cc, cy && cy.registry, cy && cy.date].filter(Boolean).join(" · ");
       var bgpAgree = !!(cyAsn && rsAsn && cyAsn === rsAsn);
-      var asnTone = (cyAsn && rsAsn && !bgpAgree) ? "w"
-        : (!asnNo || !asnOffTop ? "x" : (asnNo === String(asnOffTop) ? "g" : "w"));
+      var asnTone = (cyAsn && rsAsn && !bgpAgree) ? "o"
+        : (!asnNo || !asnOffTop ? "x" : (asnNo === String(asnOffTop) ? "g" : "o"));
       /* 「未获取」把失败原因挂在悬停上：版面不加一行，但用户想知道为什么查不到时有据可查 */
       var miss = function (label, src) {
         return src && src.error
@@ -164,7 +164,7 @@
       hostSrc.push("DoH PTR");
       if (ptrTxt) {
         hostBits.push("<b>" + esc(ptrTxt) + "</b>");
-        if (window.IPEnrich && IPEnrich.dcRe && IPEnrich.dcRe.test(ptrTxt)) { hostTone = "r"; }
+        if (window.IPEnrich && IPEnrich.dcRe && IPEnrich.dcRe.test(ptrTxt)) { hostTone = "d"; }
         else if (sameOrg(ptrTxt, org)) { hostTone = "g"; }
       } else {
         hostBits.push("<span class='mono-s'>无 PTR 记录</span>");
@@ -181,8 +181,8 @@
       if (!ptrTxt && sh.hostnames.length) { shBits.push("主机名 " + sh.hostnames.slice(0, 2).join(", ")); }
       if (riskyTags.length) { shBits.push("标签 " + riskyTags.join(", ")); }
       else if (sh.tags.length) { shBits.push("标签 " + sh.tags.join(", ")); }
-      if (sh.vulns.length) { hostTone = "r"; }
-      else if (riskyTags.length && hostTone !== "r") { hostTone = "w"; }
+      if (sh.vulns.length) { hostTone = "d"; }
+      else if (riskyTags.length && hostTone !== "d") { hostTone = "o"; }
       hostBits.push("<span class='mono-s'>" + (shBits.length ? "扫到 " + esc(shBits.join(" · ")) : "有记录，但没扫到端口 / 漏洞 / 标签") + "</span>");
       hostSrc.push('<a href="' + esc(sh.url) + '" target="_blank" rel="noopener">Shodan InternetDB</a>');
     } else if (en.shodan && en.shodan.ok) {
@@ -196,7 +196,7 @@
     if (en.online) {
       var o = en.online;
       if (o.ok) {
-        var oTone = o.hosting === true ? "r" : (o.mobile === true || o.proxy === true) ? "w"
+        var oTone = o.hosting === true ? "d" : (o.mobile === true || o.proxy === true) ? "o"
           : (sameOrg([o.org, o.isp].filter(Boolean).join(" "), org) ? "g" : "x");
         out.push(cell("接口实测（单 IP）",
           "<b>" + esc(o.org || o.isp || "接口没给 org") + "</b>" +
@@ -216,7 +216,7 @@
     }
     if (rowData.online && (rowData.online.ok || rowData.onlineNote)) {
       var vTone = !rowData.online.ok ? "x" : rowData.online.verdict === "DC" ? "r"
-        : rowData.online.verdict === "MOBILE" ? "w" : rowData.online.verdict === "ISP" ? "g" : "x";
+        : rowData.online.verdict === "MOBILE" ? "o" : rowData.online.verdict === "ISP" ? "g" : "x";
       out.push(cell("整行联网核验",
         esc([cityLabel(rowData.online.city), rowData.online.isp, rowData.online.org].filter(Boolean).join(" · ")),
         rowData.online.ok

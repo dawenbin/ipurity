@@ -54,9 +54,15 @@ node tools/make-city-packs.mjs    # → data/city/<o1>.bin + index.json
 ```js
 // data/segments-data.js → window.SEGMENT_DATA
 { generated, source, legend, isps: [], cities: [],
+  metro: { tag: "★LA", zh: "洛杉矶都会区", en: "LA metro area" },
   prefixes: { "198.*.42": { o1: 198, o3: 42, c: "1,1,3,…", i: "12,12,7,…", g: "5,5,…" } } }
-// c[x] = 第二段为 x 的 /24 类别码（1/2/3/4/6，+8 表示定位在洛杉矶都会区）
+// c[x] = 第二段为 x 的 /24 类别码（1/2/3/4/6）；+8 = 扫描时定位在 metro 这个区域里
 // i[x] / g[x] = 对应的 isps / cities 数组下标
+
+// metro = 扫描时打标记的那个区域，名字 / ★ 标记 / 中英译名都写在这里，
+//   前端照数据渲染（热度图上的圈、行内 ★、规则页那句说明都是它）。
+//   换一个都会区：改 tools/make-data.ps1 顶上那四行 + 重跑扫描，页面不用动。
+// generated = 扫描快照时间：重打包但没重扫时用 -Generated 把原时间传进来。
 
 // data/global-pack.bin → IPPACK01：8B 魔数 + u32 版本 + u32 段数 + u32 ASN 数
 //   + u32 覆盖右边界 + 段起点 u32 数组 + ASN 下标 u32 数组

@@ -2,8 +2,9 @@
  * core.js —— IP 段清洗 + 住宅纯净度判定核心（零依赖，浏览器 / Node 通用）
  *
  * 数据包结构（data/segments-data.js）：
- *   { generated, source, legend, isps[], cities[], prefixes{ "198.*.42": { o1, o3, c, i, g } } }
- *   c[x] = 类别码：1 住宅ISP / 2 机房·云 / 3 商业中转·机构 / 4 移动 / 6 其他；+8 表示定位在洛杉矶都会区
+ *   { generated, source, legend, isps[], cities[], metro{ tag, zh, en },
+ *     prefixes{ "198.*.42": { o1, o3, c, i, g } } }
+ *   c[x] = 类别码：1 住宅ISP / 2 机房·云 / 3 商业中转·机构 / 4 移动 / 6 其他；+8 = 标记区域位
  *   x = 第二段(0-255)，即 /24 下标；i[] / g[] 为 isps / cities 索引
  */
 (function (root, factory) {
@@ -26,7 +27,10 @@
      典型翻车例子：177.202.126.0/24 挂在 AS4766（Korea Telecom）下，整段其实是
      「Ace Data Centers II, LLC」的机房段 —— 光看 ASN 只会判成住宅。 */
   var ASN_CONF_CAP = 0.9;
-  var LA_BIT = 8;
+  /* 标记区域位（metro）：数据包扫描时定位在某个都会区的网段带这一位。
+     名字、★ 标记都写在数据包自己的 metro 里（见 tools/make-data.ps1）——
+     换一个都会区只改数据和流水线，这里和前端都不用动。 */
+  var METRO_BIT = 8;
   /* 第 4 段打码（82.24.73.*）= 这个网段的可用主机地址 1–254
      （.0 是网络地址、.255 是广播地址，都不是能拿的主机） */
   var HOST_LO = 1, HOST_HI = 254;
@@ -131,7 +135,7 @@
     var res = {
       pattern: pattern, ok: false, reason: "", tier: "", tierText: "", found: false, starPos: -1,
       host4: null, singleHost: false, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 6: 0 },
-      pctIsp: 0, dcHeavy: false, candidates: [], laCount: 0, host24: null
+      pctIsp: 0, dcHeavy: false, candidates: [], metroCount: 0, host24: null
     };
     var parts = String(pattern).split(".");
     if (parts.length !== 4) { res.reason = "不是 4 段格式"; return res; }
@@ -157,10 +161,14 @@
 
     var codes = String(p.c).split(","), ispsArr = String(p.i).split(","), citiesArr = String(p.g).split(",");
     var lo = (o2 === null) ? 0 : o2, hi = (o2 === null) ? 255 : o2;
+    /* 落在标记区域里的网段数：图例那行「有没有圈」和排序都用它，所以和热度图同一把尺子 ——
+       数的是这一行画出来的那些网段里有几个带 +8 位（不是只数住宅候选段）。 */
     for (var x = lo; x <= hi; x++) {
-      var base = (+codes[x] || 0) & 7;
+      var codeX = +codes[x] || 0;
+      var base = codeX & 7;
       if (res.counts[base] === undefined) { base = 6; }
       res.counts[base]++;
+      if (codeX & METRO_BIT) { res.metroCount++; }
     }
     res.sampled = hi - lo + 1;
     /* 第 4 段打码：这一段是「这个网段的 254 个可用地址」。
@@ -178,7 +186,7 @@
     if (o2 !== null) {
       var codeS = +codes[o2] || 0;
       res.host24 = {
-        o2: o2, cat: codeS & 7, la: !!(codeS & LA_BIT),
+        o2: o2, cat: codeS & 7, metro: !!(codeS & METRO_BIT),
         city: data.cities[+citiesArr[o2]] || "", isp: data.isps[+ispsArr[o2]] || "",
         network: res.o1 + "." + o2 + "." + res.o3 + ".0/24"
       };
@@ -210,10 +218,9 @@
           network: res.o1 + "." + y + "." + res.o3 + ".0/24",
           city: cCity,
           isp: data.isps[+ispsArr[y]] || "",
-          la: !!(code & LA_BIT)
+          metro: !!(code & METRO_BIT)
         };
         res.candidates.push(cand);
-        if (cand.la) { res.laCount++; }
       }
     }
     return res;
@@ -350,7 +357,7 @@
     var res = {
       pattern: pattern, ok: false, reason: "", tier: "", tierText: "", found: true, starPos: -1,
       host4: null, singleHost: false, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 6: 0 },
-      pctIsp: 0, dcHeavy: false, candidates: [], laCount: 0,
+      pctIsp: 0, dcHeavy: false, candidates: [], metroCount: 0,
       host24: null, source: "全球ASN", approx: true, asnHist: {}, homeShare: 0
     };
     if (!world || !world.ready || !world.ready()) { res.reason = "IP 归属表没加载"; return res; }
@@ -388,7 +395,7 @@
       res.sampled = 1;
       res.asnHist[e0.asn] = 1;
       res.host24 = {
-        o2: +parts[1], cat: e0.t, la: false, city: c0, isp: e0.name,
+        o2: +parts[1], cat: e0.t, metro: false, city: c0, isp: e0.name,
         network: parts[0] + "." + parts[1] + "." + parts[2] + ".0/24",
         asn: e0.asn, prob: p0
       };
@@ -445,7 +452,7 @@
       if (p > 0) {
         res.candidates.push({
           ip: ip, network: ip.split(".").slice(0, 3).join(".") + ".0/24",
-          city: cityName, isp: entry.name, la: false,
+          city: cityName, isp: entry.name, metro: false,
           asn: entry.asn, prob: Math.round(100 * p) / 100
         });
       }
@@ -521,7 +528,7 @@
 
   function sortCandidates(list) {
     return list.slice().sort(function (a, b) {
-      if (a.la !== b.la) { return a.la ? -1 : 1; }
+      if (a.metro !== b.metro) { return a.metro ? -1 : 1; }
       if (a.city !== b.city) { return a.city < b.city ? -1 : 1; }
       return a.ip < b.ip ? -1 : 1;
     });
@@ -529,7 +536,7 @@
 
   /* ---------- 4. 排名：以“你粘贴的那一行（带 *）”为单位 ----------
      第 2 段被打码时，内部要把 256 种可能全部枚举出来统计，但结论必须落回这一行本身：
-     排序键 = 级别 → 得分 → 住宅占比 → 洛杉矶都会区 /24 数 → 模式字面量。 */
+     排序键 = 级别 → 得分 → 住宅占比 → 落在标记区域里的网段数 → 模式字面量。 */
   var TIER_ORDER = { A: 0, B: 1, C: 2, D: 3, X: 4 };
   var TIER_BONUS = { A: 60, B: 30, C: 10, D: 0, X: 0 };
 
@@ -608,7 +615,7 @@
         var sa = rowScore(a), sb = rowScore(b);
         if (sb !== sa) { return sb - sa; }
         if (b.pctIsp !== a.pctIsp) { return b.pctIsp - a.pctIsp; }
-        if ((b.laCount || 0) !== (a.laCount || 0)) { return (b.laCount || 0) - (a.laCount || 0); }
+        if ((b.metroCount || 0) !== (a.metroCount || 0)) { return (b.metroCount || 0) - (a.metroCount || 0); }
       }
       return String(a.pattern) < String(b.pattern) ? -1 : 1;
     });
@@ -619,14 +626,29 @@
     return list;
   }
 
-  /* 把打码模式还原成“该买的那一段”：198.*.205.0/24 */
-  function maskedNetwork(pattern) {
-    var p = String(pattern).split(".");
-    if (p.length !== 4) { return pattern; }
-    if (p.indexOf("*") < 0) { return p[0] + "." + p[1] + "." + p[2] + ".0/24"; }   // 单个真实 IP
-    if (p[3] === "*") { return p[0] + "." + p[1] + "." + p[2] + ".0/24"; }   // 打码在第 4 段 = 这个网段的 1–254
-    if (p[2] === "*") { return p[0] + "." + p[1] + ".*.0/24"; }
-    return p[0] + ".*." + p[2] + ".0/24";
+  /* 「建议拿」这一格：三种行各自给出一个能直接拿的 /24，永远不带 *。
+       整行就是一个网段（单个 IP / 第 4 段打码 / 网段本身）→ 就是这个网段；
+       整行含 256 个候选网段（第 2 / 3 段打码）→ 排最前的那个候选;
+       一个住宅段都没有 → 空字符串。 */
+  function takeNetwork(r) {
+    if (!r || !r.ok) { return ""; }
+    if (r.starPos === 1 || r.starPos === 2) {
+      var c = sortCandidates(r.candidates)[0];
+      return c ? c.network : "";
+    }
+    return String(r.pattern).split(".").slice(0, 3).join(".") + ".0/24";
+  }
+  /* 上面那一格的口径：只有打码行才有「候选」这回事 */
+  function takeWhy(r) {
+    if (!r || (r.starPos !== 1 && r.starPos !== 2)) {
+      return r && r.singleHost
+        ? "这一行就是一个 IP，它落在这一段里"
+        : "整行就是这一个网段（254 个可用地址）";
+    }
+    var n = sortCandidates(r.candidates).length;
+    return n
+      ? "整行有 " + n + " 个住宅候选网段，这是排最前的那个；其余在下面的热度图上"
+      : "整行枚举出的 " + (r.sampled || 256) + " 个网段里没有住宅段";
   }
 
   /* 实测数据包是按 o1.*.o3 收录的：给出这个模式下要查的键（查不到就得走 IP 归属表） */
@@ -649,14 +671,14 @@
       if (!r.ok || (tiers && tiers.length && tiers.indexOf(r.tier) < 0)) { return; }
       var n = r.sampled || 0;
       var picks = sortCandidates(r.candidates).slice(0, perRow)
-        .map(function (c) { return c.ip + (c.la ? "★" : ""); }).join(" / ");
+        .map(function (c) { return c.ip + (c.metro ? "★" : ""); }).join(" / ");
       out.push([
         r.rank || r.index, r.pattern, csvCell(cityLabel(r.city ? r.city.city : "")),
         r.country ? r.country.cc : "", r.tier, T(r.tierText),
         r.source || T("实测记录"), r.score,
         csvCell(homeTxt(r)), homePct(r),
         pct(r.counts[2], n), pct(r.counts[3], n), pct(r.counts[4], n),
-        maskedNetwork(r.pattern), csvCell(picks)
+        takeNetwork(r), csvCell(picks)
       ].join(","));
     });
     return out.join("\n");
@@ -665,31 +687,31 @@
   /* 枚举明细（附件产物）：一行 = 打码模式下某一种第 2 段取值的落点 */
   function toCsvCandidates(rows, tiers, perRow) {
     perRow = perRow || 25;
-    var out = [T("排名,IP模式,建议拿的网络,枚举IP,城市,运营商,类别,洛杉矶都会区")];
+    var out = [T("排名,IP模式,建议拿的网络,枚举IP,城市,运营商,类别,都会区标记")];
     rows.forEach(function (r) {
       if (!r.ok || (tiers && tiers.length && tiers.indexOf(r.tier) < 0)) { return; }
       if (r.singleHost) {
         out.push([r.rank || r.index, r.pattern, r.host24.network, r.pattern, csvCell(r.host24.city),
-                  csvCell(r.host24.isp), T(CAT_NAME[r.host24.cat] || ""), r.host24.la ? 1 : 0].join(","));
+                  csvCell(r.host24.isp), T(CAT_NAME[r.host24.cat] || ""), r.host24.metro ? 1 : 0].join(","));
         return;
       }
       sortCandidates(r.candidates).slice(0, perRow).forEach(function (c) {
-        out.push([r.rank || r.index, r.pattern, maskedNetwork(r.pattern), c.ip, csvCell(c.city),
-                  csvCell(c.isp), T(CAT_NAME[1]), c.la ? 1 : 0].join(","));
+        out.push([r.rank || r.index, r.pattern, takeNetwork(r), c.ip, csvCell(c.city),
+                  csvCell(c.isp), T(CAT_NAME[1]), c.metro ? 1 : 0].join(","));
       });
     });
     return out.join("\n");
   }
 
   return {
-    CAT: CAT, CAT_NAME: CAT_NAME, LA_BIT: LA_BIT,
+    CAT: CAT, CAT_NAME: CAT_NAME, METRO_BIT: METRO_BIT,
     ASN_CONF_CAP: ASN_CONF_CAP,
     normalize: normalize, parseWithReport: parseWithReport, parseInput: parseInput,
     isValidPattern: isValidPattern, analyze: analyze, analyzeGlobal: analyzeGlobal,
     analyzeItem: analyzeItem, analyzeMany: analyzeMany, countRows: countRows,
     applyOnline: applyOnline,
     sortCandidates: sortCandidates, toCsv: toCsv, toCsvCandidates: toCsvCandidates,
-    rankRows: rankRows, rowScore: rowScore, maskedNetwork: maskedNetwork,
+    rankRows: rankRows, rowScore: rowScore, takeNetwork: takeNetwork, takeWhy: takeWhy,
     scoreBand: scoreBand,
     patternKey: patternKey,
     countryHist: countryHist, cityHist: cityHist,

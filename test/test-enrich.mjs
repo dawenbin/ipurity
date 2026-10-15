@@ -175,7 +175,7 @@ const vShodan = Enrich.verdict(row({}), {
 check("InternetDB 有漏洞 → 扣分并标红",
   vShodan.score === 68 && vShodan.tags.some((t) => t.tone === "d" && /已知漏洞/.test(t.t)), "score=" + vShodan.score);
 check("InternetDB 标签带 cloud → 橙色标签",
-  vShodan.tags.some((t) => t.tone === "b" && /标签/.test(t.t)), JSON.stringify(vShodan.tags.map((t) => t.t)));
+  vShodan.tags.some((t) => t.tone === "o" && /标签/.test(t.t)), JSON.stringify(vShodan.tags.map((t) => t.t)));
 check("InternetDB 只是有端口 → 不动分数", (() => {
   const v = Enrich.verdict(row({}), { shodan: { ok: true, found: true, ports: [80, 443], hostnames: [], vulns: [], tags: [] } });
   return v.score === 88;

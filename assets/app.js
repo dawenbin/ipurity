@@ -24,9 +24,21 @@
   var CATCLS = { 1: "isp", 2: "dc", 3: "biz", 4: "mob", 6: "" };
   /* 全站一套语义色：住宅=绿 · 移动=橙 · 商业/机构=蓝灰 · 机房/代理=红 · 未知/没证据=灰。
      类别词（住宅ISP / 机房/云 …）到哪都带自己的颜色，扫一眼就知道是什么。 */
-  var CAT_TONE = { 1: "g", 2: "r", 3: "n", 4: "w", 6: "x" };
+  var CAT_TONE = { 1: "g", 2: "d", 3: "b", 4: "o", 6: "x" };
   function tone(t) { return "t-" + (t || "x"); }
-  var TIER_TONE = { A: "g", B: "w", C: "n", D: "r", X: "x" };
+  var TIER_TONE = { A: "g", B: "o", C: "b", D: "d", X: "x" };
+
+  /* 数据包里的「标记区域」（metro）：热力图上的角标、图例、★ 都读这一份 ——
+     换一个都会区只要改数据流水线，这里不用动。没有就说「标记区域」。 */
+  function metroCfg() {
+    var m = DATA && DATA.metro;
+    return (m && (m.zh || m.en)) ? m : { tag: "★", zh: "标记区域", en: "marked region" };
+  }
+  function en() { return String((window.IPI18n && IPI18n.locale) ? IPI18n.locale() : "zh-CN").indexOf("en") === 0; }
+  function metroName() { var m = metroCfg(); return (en() ? m.en : m.zh) || m.zh || m.en; }
+  function metroTag() { return metroCfg().tag || "★"; }
+  /* 「落在 X 都会区」：名字来自数据，语言跟着界面走，所以拼在这里，不进词条表 */
+  function metroPhrase() { return en() ? " · lands in the " + metroName() : " · 落在" + metroName(); }
   /* 只有「跨多段的打码行」（第 2/3 段打码 = 256 个取值散在整个 /8）才谈得上分布：
      「256 个取值里有 218 个落在美国」是有信息量的；第 4 段打码是一个网段、单 IP 是一个地址，
      它们写「1/1 = 100%」只是噪声。 */
@@ -109,6 +121,11 @@
   }
 
   /* ---------- 数据包 ---------- */
+  /* 规则页里写「这个标记区域叫什么」的两处：名字来自数据包，切语言时重填一遍 */
+  function paintMetroNames() {
+    var els = document.querySelectorAll(".metroName");
+    for (var i = 0; i < els.length; i++) { els[i].textContent = metroName(); }
+  }
   function initData() {
     if (!DATA) {
       if ($("tableHost")) {
@@ -118,6 +135,7 @@
     var keys = Object.keys(DATA.prefixes || {});
     if ($("genAt")) { $("genAt").textContent = "数据包生成于 " + (DATA.generated || "?") + " · " + (DATA.source || ""); }
     }
+    paintMetroNames();
     initWorld();
   }
 
@@ -309,7 +327,7 @@
           : "实测记录：住宅网段数 / 样本数 · 占比");
       var ispCell = '<div class="tcell"><div class="stack">' + stack + '</div>' +
         /* 单个 IP 没有占比，颜色跟着它的类别走；打码行才按住宅占比分档 */
-        '<span class="share ' + tone(r.singleHost ? CAT_TONE[r.host24 ? r.host24.cat : 6] : Core.shareBand(Core.homePct(r))) + '" title="' + esc(homeTitle) + '">' +
+        '<span class="share sc ' + (r.singleHost ? CAT_TONE[r.host24 ? r.host24.cat : 6] : Core.shareBand(Core.homePct(r))) + '" title="' + esc(homeTitle) + '">' +
         esc(homeTxt) + '</span></div>';
       /* 来源列只说「这份判断的数据从哪来」；核验结论是另一回事，附在悬停里，不往来源上贴 */
       var srcText = rowSrcWhy(r) + (r.online
@@ -412,9 +430,9 @@
       "</div>";
     /* 定义格：标签一列对齐，值一列 —— 不再是一串挤在一起的行内文本 */
     var defs = [];
-    defs.push(["建议拿", '<b class="net" title="' + esc(r.starPos === 3
-      ? "第 4 段是打码位：按这个网段的 254 个可用地址（1–254）统计，.0 网络地址 / .255 广播地址已跳过"
-      : "该行枚举取值里排最前的那个网段") + '">' + esc(Core.maskedNetwork(r.pattern)) + "</b>", ""]);
+    /* 建议拿：永远是一个能直接拿的 /24（打码行给排最前的候选段，不甩一个带 * 的模式回去） */
+    defs.push(["建议拿", '<b class="net" title="' + esc(Core.takeWhy(r)) + '">' +
+      esc(Core.takeNetwork(r) || "—") + "</b>", ""]);
     defs.push(["来源", rowSrcName(r), rowSrcWhy(r)]);
     /* 说明统一成一句话：<口径> · <数据源>［，<分布>］。
        分布只在真的枚举过多个取值时给 —— 单个 IP / 单个网段写它没有意义。 */
@@ -437,7 +455,7 @@
           ? "IP 归属表 · 按运营商估算：这个网段归 " + (r.host24.asn ? "AS" + r.host24.asn + " " : "") +
             Core.CAT_NAME[r.host24.cat] + "，占比按 ASN 先验折算（不是逐段实测）"
           : "实测记录（ip-api）· " + r.host24.network + " 整段归 " + Core.CAT_NAME[r.host24.cat] +
-            (r.host24.la ? " · 落在洛杉矶都会区" : "")]);
+            (r.host24.metro ? metroPhrase() : "")]);
     }
     /* 构成条：表格那一列的放大版 —— 同一套颜色、同一套宽度算法，段上直接写名字/个数/占比。
        窄到写不下的段交给下面那行图例（每个数字只有一个出处，不重复第二遍）。 */
@@ -480,12 +498,12 @@
       return '<span class="rtag ' + t + '" title="' + esc(why) + '">' + esc(text) + "</span>";
     }
     if (r.capped) {
-      chips2 += rtag("b", "占比封顶 " + Math.round((Core.ASN_CONF_CAP || 0.9) * 100) + "%",
+      chips2 += rtag("o", "占比封顶 " + Math.round((Core.ASN_CONF_CAP || 0.9) * 100) + "%",
         "占比已按 ASN 级不确定性封顶：抽样再干净也不代表这个网段一定干净 —— 同一个 ASN 下就有对方机房/企业客户的段" +
         "（例如 177.202.126.0/24 挂在 KT 下面，但整段是 Ace Data Centers 的机房）。");
     }
     if (r.singleHost) {
-      chips2 += rtag("c", "单个 IP",
+      chips2 += rtag("b", "单个 IP",
         "清单里的这一行就是一个真实 IP，没有占比可言，直接看它归哪一类；下面那张图画的是它所在网段的 254 个可用地址。");
     }
     if (r.online) {
@@ -493,8 +511,8 @@
       var onWhy = (on.provider ? on.provider + "：" : "") + (r.onlineNote || on.why || "") +
         (on.org ? "（org " + on.org + "）" : "");
       chips2 += on.ok
-        ? rtag(on.verdict === "DC" ? "d" : "c", "联网核验 " + on.checked + "/" + on.sampled + " → " + on.verdict, onWhy)
-        : rtag("b", "核验没取到数据", onWhy);
+        ? rtag(on.verdict === "DC" ? "d" : "b", "联网核验 " + on.checked + "/" + on.sampled + " → " + on.verdict, onWhy)
+        : rtag("o", "核验没取到数据", onWhy);
     }
     if (chips2) { kv += '<div class="rtags">' + chips2 + "</div>"; }
 
@@ -502,8 +520,11 @@
        source 改成「联网核验」，但枚举/热力图还是 IP 归属表那套数据 */
     var fromGlobal = !!(r.asnHist && Object.keys(r.asnHist).length);
     /* 颜色含义由上面那条构成条负责（名字就在段上）；图例只补热力图自己的标记 */
-    var legend = (r.laCount || 0)
-      ? '<div class="legend"><span><i style="background:var(--isp);outline:2px solid var(--la);outline-offset:-2px"></i>洛杉矶都会区</span></div>'
+    /* 图例只解释那个角标：底色给中性的米色，别让人把标记和格子里的类别色混起来。
+       metroCount 就是「这一行画出来的网段里有几个带标记」，和上面热度图同一把尺子。 */
+    var legend = (r.metroCount || 0)
+      ? '<div class="legend"><span><i class="mk" style="background:var(--unk)"></i>' +
+        esc(metroName()) + "</span></div>"
       : "";
     var body;
     /* 单个真实 IP 这一行就是一个地址，图里画的是它所在的那整个网段（254 个可用地址）——
@@ -587,11 +608,11 @@
         for (var y = hLo; y <= hHi; y++) {
           /* 一个网段一格：实测记录按 /24 存，索引是打码那一位的「段内序号」 */
           var idx = one24 ? r.host24.o2 : y;
-          var code = +codes[idx] || 0, cat = code & 7, la = !!(code & 8);
+          var code = +codes[idx] || 0, cat = code & 7, metro = !!(code & Core.METRO_BIT);
           var city = DATA.cities[+cities[idx]] || "", isp = DATA.isps[+isps[idx]] || "";
           var ip2 = one24 ? r.o1 + "." + r.host24.o2 + "." + r.o3 + "." + y : r.o1 + "." + y + "." + r.o3 + ".1";
-          h += cell(ip2, (CATCLS[cat] || "") + (la ? " onla" : ""), y,
-            Core.cityLabel(city), isp, T(Core.CAT_NAME[cat] || "未知") + (la ? " · ★LA" : ""));
+          h += cell(ip2, (CATCLS[cat] || "") + (metro ? " mk" : ""), y,
+            Core.cityLabel(city), isp, T(Core.CAT_NAME[cat] || "未知") + (metro ? " · " + metroTag() : ""));
         }
       }
       $("heat").innerHTML = h;
@@ -600,7 +621,7 @@
     $("closeD").onclick = closeDetail;
     if ($("copyRow")) {
       $("copyRow").onclick = function () {
-        copy(T("排名 #" + r.rank + "  " + r.pattern + "  [" + r.tier + " " + r.tierText + "]  建议拿 " + Core.maskedNetwork(r.pattern)) + "\n" +
+        copy(T("排名 #" + r.rank + "  " + r.pattern + "  [" + r.tier + " " + r.tierText + "]  建议拿 " + Core.takeNetwork(r)) + "\n" +
           cands.map(function (c) { return c.ip + "  " + Core.cityLabel(c.city) + "  " + c.isp; }).join("\n"),
           "已复制本行 " + cands.length + " 个枚举落点");
       };
@@ -832,7 +853,7 @@
       if (!r.ok || (r.tier !== "A" && r.tier !== "B")) { return; }
       out.push("#" + r.rank + "\t" + r.pattern + "\t" + r.tier + "\t" + r.tierText +
         T("\t得分 ") + r.score + T("\t住宅 ") + Core.homeTxt(r) +
-        T("\t建议拿 ") + Core.maskedNetwork(r.pattern));
+        T("\t建议拿 ") + Core.takeNetwork(r));
     });
     if (!out.length) { toast("没有 A/B 级结果"); return; }
     copy(T("排名\tIP模式(整行)\t级别\t说明\t得分\t住宅\t建议拿的网络") + "\n" + out.join("\n"),
@@ -911,21 +932,41 @@
   initData();
 
   /* ---------- 顶栏 Star 数 ----------
-     数字来自本站自己的 data/star.json（定时任务每天刷新一次），页面不调第三方接口 ——
-     匿名接口按 IP 限流，被限流时页面上就只剩一个图标。文件取不到就只留图标，
-     不显示 0，也不编数字。 */
+     走 GitHub 官方接口（api.github.com 的 stargazers_count）—— 星数是多少就是多少，
+     不落后一天。官方接口允许跨域，但匿名按 IP 限流（60 次/小时），所以拿到的数字
+     在 localStorage 里存 6 小时：这段时间内刷新页面直接用缓存，不再打接口。
+     限流 / 断网时退回本站自己的 data/star.json（定时任务每天刷一次），
+     两条路都没有就只留图标 —— 不显示 0，也不编数字。 */
+  var STAR_API = "https://api.github.com/repos/dawenbin/ipurity";
+  var STAR_FILE = "data/star.json";
+  var STAR_TTL = 6 * 3600 * 1000;
   function paintStars(n) {
     var b = $("ghStars");
     if (!b || typeof n !== "number" || !isFinite(n)) { return; }
     b.textContent = n >= 1000 ? Math.round(n / 100) / 10 + "k" : String(n);
     b.hidden = false;
   }
-  function loadStars() {
-    if (!$("ghStars") || !window.fetch) { return; }
-    fetch("data/star.json")
+  function starFallback() {
+    fetch(STAR_FILE)
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (j) { if (j) { paintStars(j.stars); } })
       .catch(function () {});
+  }
+  function loadStars() {
+    if (!$("ghStars") || !window.fetch) { return; }
+    var cached = null;
+    try { cached = JSON.parse(localStorage.getItem("ipurity.stars") || "null"); } catch (e) { cached = null; }
+    var known = cached && typeof cached.n === "number";
+    if (known) { paintStars(cached.n); }
+    if (known && Date.now() - cached.at < STAR_TTL) { return; }
+    fetch(STAR_API, { headers: { Accept: "application/vnd.github+json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || typeof j.stargazers_count !== "number") { throw new Error("no stars"); }
+        paintStars(j.stargazers_count);
+        try { localStorage.setItem("ipurity.stars", JSON.stringify({ n: j.stargazers_count, at: Date.now() })); } catch (e) {}
+      })
+      .catch(function () { if (!known) { starFallback(); } });
   }
   loadStars();
 
@@ -978,6 +1019,7 @@
   /* 切中英文：表格里的国家名是 Intl 按语言现算的，词条表管不到，所以整块重画一遍。
      其它文字（表格标题、报告面板、提示）由 i18n.js 的观察器就地替换，不用重画。 */
   document.addEventListener("ipurity:lang", function () {
+    paintMetroNames();
     if (!state.ranked.length) { return; }
     renderChips();
     renderTable();

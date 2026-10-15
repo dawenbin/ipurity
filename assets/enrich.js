@@ -294,17 +294,17 @@
         tags.push({ t: "机房/托管", tone: "d", src: (on.provider || "接口") + " 实测", why: on.why || "" });
       } else if (on.verdict === "MOBILE") {
         if (score > 40) { parts.push({ k: "移动网络封顶 40", v: 40 - score, src: on.provider || "接口" }); score = 40; }
-        tags.push({ t: "移动网络", tone: "b", src: (on.provider || "接口") + " 实测", why: "手机流量池，不是住宅固网" });
+        tags.push({ t: "移动网络", tone: "o", src: (on.provider || "接口") + " 实测", why: "手机流量池，不是住宅固网" });
       } else if (on.verdict === "ISP") {
         score = Math.min(96, score + 4); parts.push({ k: "org 像零售运营商", v: +4, src: on.provider || "接口" });
       }
-      if (on.org) { tags.push({ t: "org: " + on.org, tone: "n", src: (on.provider || "接口") + " 实测", why: "接口返回的组织名" }); }
+      if (on.org) { tags.push({ t: "org: " + on.org, tone: "x", src: (on.provider || "接口") + " 实测", why: "接口返回的组织名" }); }
     }
 
     if (en && en.rdap && en.rdap.ok) {
       var r = en.rdap;
       var holder = r.name || (r.entities[0] || "");
-      if (holder) { tags.push({ t: "持有者: " + holder, tone: "n", src: "RDAP/" + (r.registry || "RIR"), why: r.range }); }
+      if (holder) { tags.push({ t: "持有者: " + holder, tone: "x", src: "RDAP/" + (r.registry || "RIR"), why: r.range }); }
       if (holder && DC_RX.test(holder)) {
         score = 0; parts.push({ k: "RDAP 持有者命中机房关键词", v: 0, src: "RDAP" });
         tags.push({ t: "机房/机构（注册记录）", tone: "d", src: "RDAP " + r.handle, why: holder });
@@ -312,12 +312,12 @@
       if (r.country && on && on.cc && r.country !== on.cc) {
         parts.push({ k: "注册国 " + r.country + " ≠ 定位国 " + on.cc, v: -8, src: "RDAP vs " + (on.provider || "接口") });
         score = Math.max(0, score - 8);
-        tags.push({ t: "异地注册/广播", tone: "c", src: "RDAP " + r.country + " vs 定位 " + on.cc, why: "注册国与实测定位不一致" });
+        tags.push({ t: "异地注册/广播", tone: "b", src: "RDAP " + r.country + " vs 定位 " + on.cc, why: "注册国与实测定位不一致" });
       }
     }
     if (en && en.ptr && en.ptr.ok && en.ptr.found) {
       var ptr = en.ptr.ptr.join(", ");
-      tags.push({ t: "PTR: " + ptr, tone: "n", src: "DoH PTR", why: "反向解析名" });
+      tags.push({ t: "PTR: " + ptr, tone: "x", src: "DoH PTR", why: "反向解析名" });
       if (DC_RX.test(ptr)) {
         score = Math.max(0, score - 15); parts.push({ k: "PTR 命中机房命名", v: -15, src: "DoH PTR" });
         tags.push({ t: "PTR 像机房", tone: "d", src: "DoH PTR", why: ptr });
@@ -332,7 +332,7 @@
         ? String(en.ripestat.asns[0].asn) : "";
       if (cymruAsn && risAsn && cymruAsn !== risAsn) {
         tags.push({
-          t: "两路 BGP 数据不一致", tone: "b",
+          t: "两路 BGP 数据不一致", tone: "o",
           src: "Cymru AS" + cymruAsn + " vs RIPEstat AS" + risAsn,
           why: "两个独立的 BGP 视图给出不同 origin ASN，这一行正在变动，别只看一家"
         });
@@ -340,7 +340,7 @@
         var liveAsn = cymruAsn || risAsn;
         if (offTop && liveAsn && offTop !== liveAsn) {
           tags.push({
-            t: "ASN 与离线库不一致", tone: "b",
+            t: "ASN 与离线库不一致", tone: "o",
             src: (cymruAsn ? "Cymru" : "RIPEstat") + " 实测 AS" + liveAsn + " vs 离线 AS" + offTop,
             why: "以实测为准"
           });
@@ -359,7 +359,7 @@
       if (risky.length) {
         score = Math.max(0, score - 10);
         parts.push({ k: "InternetDB 标签 " + risky.join("/"), v: -10, src: "Shodan InternetDB" });
-        tags.push({ t: "标签: " + risky.join(", "), tone: "b", src: "Shodan InternetDB", why: "扫描标签里带 VPN / 云 / 托管" });
+        tags.push({ t: "标签: " + risky.join(", "), tone: "o", src: "Shodan InternetDB", why: "扫描标签里带 VPN / 云 / 托管" });
       }
     }
 

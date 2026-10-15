@@ -10,16 +10,26 @@
 #>
 param(
     [string]$InputCsv = "build/prefixmap-classified.csv",
-    [string]$OutDir   = "data"
+    [string]$OutDir   = "data",
+    # 数据快照时间：重打包但没有重扫时把原时间传进来，别让界面看起来像刚扫过
+    [string]$Generated = ""
 )
 $ErrorActionPreference = "Stop"
+
+if (-not $Generated) { $Generated = Get-Date -Format "yyyy-MM-dd HH:mm" }
 
 $rows = Import-Csv $InputCsv
 if (-not $rows) { throw "读不到 $InputCsv(先跑 tools/scan-prefixes.ps1)" }
 
-# 类别码: 1=住宅ISP 2=机房/云 3=商业中转/机构 4=移动 6=其他 ; +8 = ip-api 定位在洛杉矶都会区
+# 类别码: 1=住宅ISP 2=机房/云 3=商业中转/机构 4=移动 6=其他 ; +8 = ip-api 定位在下面这个都会区
 $CODE = @{ "ISP" = 1; "DC" = 2; "DCENT" = 3; "MOBILE" = 4; "UNK" = 6 }
-$laRx = '^(Los Angeles|Torrance|El Segundo|Inglewood|Burbank|North Hollywood|Hollywood|Covina|Glendale|Pomona|Santa Monica|Baldwin Park|Sylmar|Rosemead|San Gabriel|El Monte|Montebello|Monterey Park|Pasadena|Culver City|Marina del Rey|Beverly Hills|Whittier|La Mirada|Santa Fe Springs|City of Industry|Alhambra|Arcadia|Azusa|West Covina|Universal City|Calabasas|Westlake Village|Santa Clarita|Van Nuys|Woodland Hills|Sherman Oaks|Long Beach|Downey|Norwalk|La Habra|Fullerton|Anaheim|Santa Ana|Irvine|Newport Beach|Garden Grove|Cypress|Brea|Costa Mesa|Tustin|Laguna.*|Rancho Cucamonga|Ontario|Fontana|Riverside|Simi Valley|Thousand Oaks|Ventura|Oxnard|Los Alamitos|Seal Beach|Redondo Beach|Manhattan Beach|Hermosa Beach|Palos Verdes.*|San Pedro|Canoga Park|Chatsworth|Panorama City|Sun Valley|Encino|Tarzana|Reseda|Northridge|Granada Hills|Mission Hills|San Fernando|South Gate|Compton|Gardena|Carson|Hawthorne|Lawndale)$'
+
+# 标记区域(metro)：扫描时定位在这一带的网段打上 +8 位，页面上的圈和 ★ 只看这一位。
+# 换一个都会区 = 改这四行 + 重跑扫描，前端不用动。
+$MetroNameZh = "洛杉矶都会区"
+$MetroNameEn = "LA metro area"
+$MetroTag    = "★LA"
+$MetroRx     = '^(Los Angeles|Torrance|El Segundo|Inglewood|Burbank|North Hollywood|Hollywood|Covina|Glendale|Pomona|Santa Monica|Baldwin Park|Sylmar|Rosemead|San Gabriel|El Monte|Montebello|Monterey Park|Pasadena|Culver City|Marina del Rey|Beverly Hills|Whittier|La Mirada|Santa Fe Springs|City of Industry|Alhambra|Arcadia|Azusa|West Covina|Universal City|Calabasas|Westlake Village|Santa Clarita|Van Nuys|Woodland Hills|Sherman Oaks|Long Beach|Downey|Norwalk|La Habra|Fullerton|Anaheim|Santa Ana|Irvine|Newport Beach|Garden Grove|Cypress|Brea|Costa Mesa|Tustin|Laguna.*|Rancho Cucamonga|Ontario|Fontana|Riverside|Simi Valley|Thousand Oaks|Ventura|Oxnard|Los Alamitos|Seal Beach|Redondo Beach|Manhattan Beach|Hermosa Beach|Palos Verdes.*|San Pedro|Canoga Park|Chatsworth|Panorama City|Sun Valley|Encino|Tarzana|Reseda|Northridge|Granada Hills|Mission Hills|San Fernando|South Gate|Compton|Gardena|Carson|Hawthorne|Lawndale)$'
 
 $isps = New-Object System.Collections.Generic.List[string]
 $cities = New-Object System.Collections.Generic.List[string]
@@ -42,7 +52,7 @@ foreach ($g in ($rows | Group-Object prefix)) {
              elseif ($r.PSObject.Properties['o2'] -and "$($r.o2)" -ne "") { [int]$r.o2 }
              else { [int](($r.query -split '\.')[1]) }
         if ($o -lt 0 -or $o -gt 255) { continue }
-        $codes[$o] = [string]($CODE[$r.Cat] + $(if ($r.city -match $laRx) { 8 } else { 0 }))
+        $codes[$o] = [string]($CODE[$r.Cat] + $(if ($r.city -match $MetroRx) { 8 } else { 0 }))
         $is[$o]    = Idx $isps   $ispIdx  $r.isp
         $ci[$o]    = Idx $cities $cityIdx $r.city
     }
@@ -56,9 +66,11 @@ foreach ($g in ($rows | Group-Object prefix)) {
 }
 
 $data = [ordered]@{
-    generated = (Get-Date -Format "yyyy-MM-dd HH:mm")
+    generated = $Generated
     source    = "ip-api.com free (ASN/org/hosting/proxy/mobile/geo)"
-    legend    = "c[x] 类别码: 1住宅ISP 2机房/云 3商业中转/机构 4移动 6其他; +8 表示定位在洛杉矶都会区; x = 第二段(0-255)"
+    legend    = "c[x] 类别码: 1住宅ISP 2机房/云 3商业中转/机构 4移动 6其他; +8 表示定位在$MetroNameZh; x = 第二段(0-255)"
+    # 标记区域的名字与 ★ 标记：数据决定，前端照着渲染（换都会区不用改代码）
+    metro     = [ordered]@{ tag = $MetroTag; zh = $MetroNameZh; en = $MetroNameEn }
     isps      = $isps
     cities    = $cities
     prefixes  = $prefixes

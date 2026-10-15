@@ -99,8 +99,17 @@ check("A 级内部按住宅占比降序", aRows.every((r, i) => i === 0 || aRows
 check("每行都有得分", ranked1.every((r) => typeof r.score === "number" && r.score >= 0 && r.score <= 100),
   ranked1.slice(0, 3).map((r) => r.score).join(","));
 check("行身份保持打码模式", ranked1[0].pattern.includes("*"), ranked1[0].pattern);
-check("建议拿的网络带 *", Core.maskedNetwork("198.*.42.81") === "198.*.42.0/24", Core.maskedNetwork("198.*.42.81"));
-check("第 3 段打码的建议段也带 *", Core.maskedNetwork("198.42.*.81") === "198.42.*.0/24", Core.maskedNetwork("198.42.*.81"));
+/* 「建议拿」永远是一个能直接拿的 /24：打码行给排最前的候选段，不给带 * 的模式 */
+{
+  const rr = Core.analyze("198.*.42.81", data, {});
+  const net = Core.takeNetwork(rr);
+  check("打码行的建议拿是一个具体 /24", /^\d+\.\d+\.\d+\.0\/24$/.test(net), net || "(空)");
+  check("建议拿就是排最前的候选段", net === Core.sortCandidates(rr.candidates)[0].network, net);
+  check("建议拿的口径写得出来", /候选网段/.test(Core.takeWhy(rr)), Core.takeWhy(rr));
+  const bare = {};
+  check("没有候选段时建议拿留空", Core.takeNetwork(Object.assign(bare, rr, { candidates: [] })) === "",
+    Core.takeWhy(Object.assign({}, rr, { candidates: [] })));
+}
 
 const csv1 = Core.toCsv(ranked1, ["A", "B"], 3);
 const csvLines = csv1.split("\n");
@@ -120,8 +129,14 @@ check("枚举明细行数多于排名表", csvCand.split("\n").length > csvLines
   const r = Core.analyze("198.3.242.*", data, {});   // 实测记录里有 198.*.242
   check("第 4 段打码样本 = 254（跳过 .0/.255）", !!r.ok && r.sampled === 254 && r.hostRange === "1-254",
     r.ok ? `sampled=${r.sampled} hostRange=${r.hostRange}` : r.reason);
-  check("建议拿的网络是标准 /24 写法", Core.maskedNetwork("82.24.73.*") === "82.24.73.0/24",
-    Core.maskedNetwork("82.24.73.*"));
+  check("整行就是这个网段时，建议拿是它的 /24", Core.takeNetwork(r) === "198.3.242.0/24",
+    Core.takeNetwork(r) || "(空)");
+  check("整行一段的口径", /整行就是这一个网段/.test(Core.takeWhy(r)), Core.takeWhy(r));
+  /* 单个真实 IP：建议拿 = 它所在的那个 /24 */
+  const rOne = Core.analyze("198.3.243.16", data, {});
+  check("单个 IP 的建议拿 = 它所在的 /24", Core.takeNetwork(rOne) === "198.3.243.0/24",
+    Core.takeNetwork(rOne) || "(空)");
+  check("单个 IP 的口径", /落在这一段里/.test(Core.takeWhy(rOne)), Core.takeWhy(rOne));
 
   /* CIDR 写法应该跟第 4 段打码走同一条路 */
   const cidr = Core.parseInput("198.3.242.0/24")[0];
@@ -151,6 +166,33 @@ check("枚举明细行数多于排名表", csvCand.split("\n").length > csvLines
     check("IP 归属表第 2 段打码样本 = 256", !!g2.ok && g2.sampled === 256,
       g2.ok ? `sampled=${g2.sampled}` : g2.reason);
   }
+}
+
+/* ---------- 标记区域（metro）：名字/★ 在数据包里，位是 +8，不是洛杉矶专用 ---------- */
+{
+  const m = data.metro;
+  check("数据包带 metro 的名字与 ★ 标记", !!m && !!m.tag && !!m.zh && !!m.en, JSON.stringify(m));
+  /* 名字由数据渲染，不走词条表 —— 英文名里不能再有中文，否则英文界面会露出中文 */
+  check("metro 英文名不带中文", !!m && !/[\u4e00-\u9fa5]/.test(m.en), m && m.en);
+  check("/8 位还是 +8（换区域不动前端）", Core.METRO_BIT === 8, String(Core.METRO_BIT));
+  const withMetro = Object.keys(data.prefixes)
+    .map((k) => data.prefixes[k].c.split(",").filter((c) => (+c & Core.METRO_BIT)).length)
+    .reduce((a, b) => a + b, 0);
+  check("数据里真的有点上标记的网段", withMetro > 0, String(withMetro));
+  const rr = Core.analyze("198.*.42.81", data, {});
+  /* 计数和热度图同一把尺子：这一行画出来的网段里有几个带 +8 位 */
+  const flagged = data.prefixes[rr.key].c.split(",").filter((c) => (+c & Core.METRO_BIT)).length;
+  check("带标记的网段数 = 热度图会画圈的格子数", rr.metroCount === flagged,
+    `metroCount=${rr.metroCount} / flagged=${flagged}`);
+  check("候选项自己也带 metro 位", rr.candidates.every((c) => typeof c.metro === "boolean"));
+  /* 候选里只要有一个带标记，它就得排在最前（先标记区域、再城市、再 IP） */
+  const candMetro = rr.candidates.filter((c) => c.metro).length;
+  const sorted = Core.sortCandidates(rr.candidates);
+  check("★ 候选排在前面", candMetro === 0 || sorted[0].metro === true,
+    `候选里带标记 ${candMetro} 个 / 排在最前 ${sorted[0] && sorted[0].ip}`);
+  check("同标记内不再乱序（城市 → IP）",
+    sorted.every((c, i) => i === 0 || !c.metro || sorted[i - 1].metro),
+    sorted.slice(0, 3).map((c) => c.ip + (c.metro ? "★" : "")).join(" "));
 }
 
 console.log(fail === 0 ? "\n全部通过 ✅" : `\n${fail} 项失败 ❌`);
