@@ -110,7 +110,11 @@ csv.slice(1).forEach((line) => {
   const c = line.split(",");
   const r = rows.find((x) => x.pattern === c[1]);
   check(`CSV 住宅列 == Core.homeTxt(${c[1]})`, r && c[iHome] === Core.homeTxt(r), c[iHome]);
-  check(`CSV 得分 == 行级得分（${c[1]}）`, r && String(c[iScore]) === String(r.score), c[iScore]);
+  /* 没级别的行（未评级 = 只有类型先验、不可路由）得分列留空 ——
+     那个 0 是「没有分数」，不是「得分 0 分」，CSV 里不能写成 0。 */
+  const wantScore = r && r.tier ? String(r.score) : "";
+  check(`CSV 得分列（${c[1]}）${r && r.tier ? "== 行级得分" : "留空（这一行没级别）"}`,
+    r && String(c[iScore]) === wantScore, `CSV=${JSON.stringify(c[iScore])} 期望=${JSON.stringify(wantScore)}`);
 });
 
 /* ---------- 国家 / 城市：同源、同规则，不能出现「国旗一个国、城市另一个国」 ---------- */

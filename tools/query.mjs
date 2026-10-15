@@ -71,18 +71,33 @@ for (const raw of inputs) {
 const Online = online ? require(join(root, "assets", "online.js")) : null;
 
 for (const p of patterns) {
-  let r = Core.analyze(p, data);
-  if (!r.ok && worldOk) {
+  /* 走和页面**完全相同**的那条路（analyzeItem）：实测数据优先，没命中落到 IP 归属表，
+     然后统一过不可路由 / 未评级两道判定。早先 CLI 自己拼 analyze + analyzeGlobal，
+     结果绕过了保留地址那道闸口 —— 同一个地址命令行说「X 级」、页面说「不可路由」。 */
+  let r = null;
+  if (worldOk) {
     const o1 = Number(String(p).split(".")[0]);
     const sliced = citySlice(o1);
-    const g = Core.analyzeGlobal(p, { world: World, city: sliced ? City : null });
-    if (g.ok) { r = g; }
+    if (sliced) { City.put(o1, sliced); }
+    r = Core.analyzeItem({ index: 1, sourceLine: 1, raw: p, pattern: p }, data,
+      { world: World, cityPack: sliced ? City : null });
+  } else {
+    r = Core.analyze(p, data);
   }
-  if (!r.ok) { console.log(`${p}\n  ✗ ${r.reason}`); continue; }
+  if (!r.ok && !r.reserved && !r.ungraded) { console.log(`${p}\n  ✗ ${r.reason}`); continue; }
+  /* 不可路由：页面怎么写，命令行就怎么说 */
+  if (r.reserved) { console.log(`${p}\n  不可路由（公网没人宣告这个地址，不参与排名与得分）`); continue; }
   if (Online) {
     /* node 里优先 ip-api（hosting/proxy/mobile 标记最全），失败再落 ipwho.is */
     const v = await Online.checkPattern(p, { maxSamples: onlineSamples, timeoutMs: 9000, order: ["ip-api", "ipwho"] });
     Core.applyOnline(r, v);
+  }
+  /* 未评级：只有关键词类型，没有密度数据 —— 不报级别、不报得分，只说它是什么类型 */
+  if (r.ungraded) {
+    console.log(`${p}\n  未评级 · ${Core.CAT_NAME[Core.topCat(r)] || "未知"}  [${r.source || "实测记录"}]` +
+      `  按运营商类型判（这个 ASN 一个标定样本都没有，没有密度数据）` +
+      `  机房 ${r.counts[2]}  商业 ${r.counts[3]}  移动 ${r.counts[4]}`);
+    continue;
   }
   console.log(`${p}\n  ${r.tier} 级${r.approx ? "（估算）" : ""} · ${r.tierText}` +
     `  [${r.source || "实测记录"}]` +

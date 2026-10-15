@@ -260,7 +260,8 @@
       chip("all", "", "全部", state.ranked.length, "显示全部行 · 排名按行（带 * 的整行一起排）") +
       chip("a", "a", "A 级", c.A || 0) + chip("b", "b", "B 级", c.B || 0) +
       chip("c", "c", "C 级", c.C || 0) + chip("d", "d", "D 级", c.D || 0) +
-      chip("x", "x", "未识别/缺数据", (c.fail || 0), "没判出来的行：不可路由的地址（没人宣告）+ 数据包里没有的段") +
+      chip("x", "x", "未识别/缺数据", (c.fail || 0),
+        "没给出级别的行：未评级（这个 ASN 没有标定样本，只有关键词类型）+ 不可路由（没人宣告）+ 数据包里没有的段") +
       chip("ab", "", "推荐行 (A+B)", rec);
   }
   function chip(f, cls, k, v, tip) {
@@ -312,7 +313,8 @@
       var homeTitle = r.probOnly
         ? (Core.priorOnly(r)
           ? "这一行的 " + r.sampled + " 个取值一个标定样本都没有：数字只能按 ASN 关键词类型给先验" +
-            "（判为零售 ISP 就一律 100%），是个常数，跟这些地址实际怎样无关 —— 所以这里写类别，不写占比"
+            "（判为零售 ISP 就一律 100%），是个常数，跟这些地址实际怎样无关 —— 所以这里写类别，不写占比，" +
+            "这一行也因此不给级别、不进排名"
           : "IP 归属表：按 ASN 住宅先验对 " + r.sampled + " 个取值做概率加权折算（≈ 表示不是逐个实测），占比按 ASN 级不确定性封顶 90%")
         : (r.singleHost ? "你粘贴的这一行是一个真实 IP，样本只有它自己 —— 没有占比可言，直接看它归哪一类"
           : "实测记录：住宅网段数 / 样本数 · 占比");
@@ -331,17 +333,26 @@
           : "没取到数据，这一行仍是分级估算")
         : "");
       var srcCell = '<span title="' + esc(srcText) + '">' + rowSrcName(r) + "</span>";
+      /* 未评级：只有运营商类型、一个标定样本都没有 → 不给级别、不给得分。
+         这跟「不可路由」是同一类处理（值本身没有依据，就不拿它下结论），
+         但这一行仍然告诉你它是什么类型 —— 那部分是真数出来的。 */
+      var tierCell = r.ungraded
+        ? '<span class="tier X" title="这个 ASN 一个标定样本都没有：只能按运营商关键词判类型，密度数据不存在，所以不给级别、不算得分、不进推荐"><i></i>未评级</span>'
+        : '<span class="tier ' + r.tier + '"><i></i>' + r.tier + '</span>';
+      var scoreCell = r.ungraded
+        ? '<span class="mono-s" title="未评级：没有样本支撑的分数不该给">—</span>'
+        : '<b class="sc ' + Core.scoreBand(r.score) + '" title="行级得分 0–100（由离线分级算出）。配色：绿 ≥75 · 橙 50–74 · 蓝灰 25–49 · 红 <25">' +
+          Math.round(r.score) + '</b>';
       html += '<tr data-i="' + r.index + '" class="rowin' + (state.active === r.index ? " active" : "") + '" style="animation-delay:' + Math.min(i * 12, 400) + 'ms">' +
         '<td class="mono-s"><b>' + r.rank + '</b></td>' +
-        '<td><span class="tier ' + r.tier + '"><i></i>' + r.tier + '</span></td>' +
+        '<td>' + tierCell + '</td>' +
         /* 级别药丸和「住宅」那一格已经说清是不是机房，不再往 IP 上贴第三个标签 */
         '<td><b>' + r.pattern + '</b></td>' +
         '<td>' + ispCell + '</td>' +
         '<td>' + countryCell(r) + '</td>' +
         '<td>' + cityCell(r) + '</td>' +
         '<td class="mono-s">' + srcCell + '</td>' +
-        '<td class="mono-s"><b class="sc ' + Core.scoreBand(r.score) + '" title="行级得分 0–100（由离线分级算出）。配色：绿 ≥75 · 橙 50–74 · 蓝灰 25–49 · 红 <25">' +
-          Math.round(r.score) + '</b></td>' +
+        '<td class="mono-s">' + scoreCell + '</td>' +
         '<td class="mono-s">▸</td></tr>';
     });
     html += "</tbody></table>";
@@ -416,12 +427,20 @@
     var tierTone = TIER_TONE[r.tier] || "x";
     var vHome = r.singleHost ? "" : "住宅 " + Core.homeTxt(r);
     if (r.online && r.online.verdict === "DC") { vHome = "住宅 0%（联网核验判定为机房）"; }
-    var verdict = '<div class="verdict ' + tone(tierTone) + '">' +
-      '<b class="v1">' + r.tier + "</b>" +
-      "<b class=\"v1\">" + esc(r.tierText) + "</b>" +
-      (vHome ? '<span class="v2">' + esc(vHome) + "</span>" : "") +
-      '<span class="scpill" title="行级得分 0–100（离线分级算出）">得分 <b class="sc ' + Core.scoreBand(r.score) + '">' + r.score + "</b></span>" +
-      "</div>";
+    /* 未评级：没有级别也没有得分 —— 那两样都建立在「这个 ASN 的住宅密度」上，
+       而这一类行只有一个关键词类型。写类别 + 一句为什么，比给个空级别诚实。 */
+    var verdict = r.ungraded
+      ? '<div class="verdict x">' +
+        '<b class="v1">未评级</b>' +
+        '<b class="v1">' + esc(Core.CAT_NAME[Core.topCat(r)] || "未知") + "</b>" +
+        '<span class="v2" title="这个 ASN 一个标定样本都没有，密度数据不存在">按运营商类型判 · 没有样本，不给级别与得分</span>' +
+        "</div>"
+      : '<div class="verdict ' + tone(tierTone) + '">' +
+        '<b class="v1">' + r.tier + "</b>" +
+        "<b class=\"v1\">" + esc(r.tierText) + "</b>" +
+        (vHome ? '<span class="v2">' + esc(vHome) + "</span>" : "") +
+        '<span class="scpill" title="行级得分 0–100（离线分级算出）">得分 <b class="sc ' + Core.scoreBand(r.score) + '">' + r.score + "</b></span>" +
+        "</div>";
     /* 定义格：标签一列对齐，值一列 —— 不再是一串挤在一起的行内文本。
        这里只放「有数据支撑的事实」：来源、口径、得分。不摆「建议拿哪个 IP」——
        工具只看到 /24 这一层，挑不出更该拿的那个，给了就是假精确。 */

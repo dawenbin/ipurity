@@ -170,6 +170,12 @@
       "The 4th octet is masked: counted over this /24's 254 usable addresses (1–254); .0 (network) and .255 (broadcast) are skipped"],
     /* 不可路由：公网没人宣告这个地址（IP 归属表记成 AS0 / Not routed） */
     [/不可路由/, "Unroutable"],
+    /* 未评级：只有运营商关键词类型，一个标定样本都没有 → 不给级别与得分 */
+    [/未评级/, "Ungraded"],
+    [/按运营商类型判 · 没有样本，不给级别与得分/, "typed by carrier keyword only - no samples, so no tier and no score"],
+    [/这个 ASN 一个标定样本都没有：只能按运营商关键词判类型，密度数据不存在，所以不给级别、不算得分、不进推荐/,
+      "this ASN has no calibration sample at all, so its type comes from the carrier keyword and no density figure exists - no tier, no score, not recommended"],
+    [/未评级：没有样本支撑的分数不该给/, "ungraded: a score with no sample behind it should not be printed"],
     [/住宅 0%（联网核验判定为机房）/, "residential 0% (online check says datacenter)"],
     [/住宅 ≈([\d,]+)\/([\d,]+) · ([\d.]+)%/, "residential ≈$1/$2 · $3%"],
     [/住宅 /, "residential "],

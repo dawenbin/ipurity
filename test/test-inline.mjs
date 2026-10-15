@@ -252,6 +252,68 @@ check("4 段以上（最像 IP 的噪声）记进未识别，不静默消失", n
   });
   check("估算 ⟺ 来源列写「IP 归属表」（两条路六个入口都对齐）", mism.length === 0,
     mism.map(([n]) => n).join(" | ") || combos.map(([n, r]) => n + "=" + (r.approx ? "估算" : "实测")).join(" "));
+  /* 未评级：只有运营商关键词类型、一个标定样本都没有 → 不给级别、不给得分、不进推荐。
+     判据是「这个 ASN 有没有够用的标定样本」（world.calibrated），不是「像不像住宅」。
+     第三个样例是扫出来的，不是手挑的 —— 哪些 /8 已经被宣告、哪些没被宣告是外部事实，
+     写死在测试里迟早过期（13.* / 2.* 这些段就没被宣告）。 */
+  const un = mk(["171.213.132.*", "1.1.70.*", "50.*.54.100", "198.3.1.*"]);
+  let picked = null;
+  for (let o1 = 1; o1 <= 60 && !picked; o1++) {
+    for (let o3 = 0; o3 < 256 && !picked; o3 += 7) {
+      const pat = `${o1}.1.${o3}.*`;
+      if (un.some(r => r.pattern === pat)) { continue; }
+      const r = mk([pat])[0];
+      if (r.ok && r.ungraded && r.counts[Core.topCat(r)] > 0) { picked = r; }
+    }
+  }
+  check("扫得出一行「未评级且类别计数非零」的行（给下面几条用）", !!picked,
+    picked ? picked.pattern + " topCat=" + Core.topCat(picked) + "×" + picked.counts[Core.topCat(picked)] : "(没扫到)");
+  if (picked) { un.push(picked); }
+  const ungraded = un.filter(r => r.ungraded);
+  check("没有标定样本的行判为未评级", ungraded.length === 3,
+    un.map(r => r.pattern + "=" + (r.ungraded ? "未评级" : (r.reserved ? "不可路由" : (r.tier || "?")))).join(" "));
+  check("未评级：没有级别、没有得分、tier 为空",
+    ungraded.every(r => !r.tier && !r.tierText && Core.rowScore(r) === 0),
+    ungraded.map(r => r.pattern + " tier=" + JSON.stringify(r.tier) + " score=" + Core.rowScore(r)).join(" | "));
+  check("未评级：住宅那格写类别，不写占比",
+    ungraded.every(r => /^按类型先验 · \S+$/.test(Core.homeTxt(r)) && !/%/.test(Core.homeTxt(r))),
+    ungraded.map(r => Core.homeTxt(r)).join(" | "));
+  /* counts[1] 对先验行是按概率折算后**改写过**的（229/254 那种），所以不能拿它去凑样本数；
+     能保证的是「类别这一列是真数出来的」—— 类别名取得到，且它落在真实类别里。 */
+  check("未评级仍保留类别计数（类别那一列是真数出来的）",
+    ungraded.every(r => [1, 2, 3, 4, 6].indexOf(Core.topCat(r)) >= 0 && r.counts[Core.topCat(r)] > 0),
+    ungraded.map(r => r.pattern + " topCat=" + Core.topCat(r) + "(" + Core.CAT_NAME[Core.topCat(r)] + ")×" + r.counts[Core.topCat(r)]).join(" | "));
+  /* 有标定样本的行不能被误判成未评级。注意 D 级行的得分本来就是 0（级别奖励 0），
+     所以这里只断言「有级别」，别把 0 分当成异常。 */
+  const kept = un.filter(r => !r.ungraded);
+  check("有标定样本的行照常评级（D 级得分本就可能是 0，不算异常）",
+    kept.every(r => !!r.tier && r.tierText),
+    kept.map(r => r.pattern + "=" + r.tier + "/" + Core.rowScore(r)).join(" "));
+  /* 单 IP 走的是另一条路（类别比密度可信），不受未评级影响 */
+  check("单个 IP 不受未评级影响", (() => {
+    const s = Core.analyzeItem({ index: 1, sourceLine: 1, raw: "73.45.128.9", pattern: "73.45.128.9" }, data, { world: W });
+    return s.ok && !s.ungraded && s.tier === "A" && /^单个 IP · /.test(Core.homeTxt(s));
+  })(), Core.homeTxt(Core.analyzeItem({ index: 1, sourceLine: 1, raw: "73.45.128.9", pattern: "73.45.128.9" }, data, { world: W })));
+  /* 统计条不该冒出空字符串这种键，未评级算进「未识别/缺数据」 */
+  const cnt = Core.countRows(un);
+  check("未评级算进「未识别/缺数据」，统计条不冒出空键",
+    cnt.fail === ungraded.length && !("" in cnt) && cnt.A + cnt.B + cnt.C + cnt.D + cnt.fail === un.length,
+    JSON.stringify(cnt));
+  /* 排名：未评级排在所有有级别的行之后 */
+  const unRanked = Core.rankRows(un);
+  const firstUngraded = unRanked.findIndex(r => r.ungraded);
+  check("未评级排在有级别的行之后",
+    firstUngraded < 0 || unRanked.slice(firstUngraded).every(r => r.ungraded || !r.tier),
+    unRanked.map(r => r.pattern + "(" + (r.tier || "未评级") + ")").join(" "));
+  /* 导出：不按级别筛时，粘了几行就导出几行（未评级/不可路由也在，格子留空） */
+  const allCsv = Core.toCsv(unRanked, null, 3).split("\n");
+  check("导出不按级别筛时，粘几行出几行", allCsv.length - 1 === un.length, `导出 ${allCsv.length - 1} / 共 ${un.length}`);
+  const unLine = allCsv.find(l => l.indexOf(ungraded[0].pattern) >= 0);
+  check("未评级行的得分列留空（不是 0）", !!unLine && unLine.split(",")[7] === "",
+    unLine ? JSON.stringify(unLine.split(",").slice(0, 8)) : "(没找到)");
+  check("按级别筛时未评级行不出现",
+    !ungraded.some(r => Core.toCsv(unRanked, ["A", "B"], 3).indexOf(r.pattern) >= 0),
+    Core.toCsv(unRanked, ["A", "B"], 3).split("\n").map(l => l.split(",")[1]).join(" "));
 }
 
 const t6 = Core.analyze("50.*.54.100", data);

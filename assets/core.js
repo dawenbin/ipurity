@@ -315,11 +315,13 @@
     return r;
   }
 
-  /* 各级行数：表格上方那排数字的唯一出处（页面分批算完也调它汇总） */
+  /* 各级行数：表格上方那排数字的唯一出处（页面分批算完也调它汇总）。
+     没级别的行（未评级 = 只有类型先验、不可路由、判失败）统一算进 fail ——
+     它们都不是「A/B/C/D 里的某一行」，所以计数字典里不该冒出空字符串这种键。 */
   function countRows(rows) {
     var counts = { A: 0, B: 0, C: 0, D: 0, X: 0, fail: 0 };
     (rows || []).forEach(function (r) {
-      if (r && r.ok) { counts[r.tier] = (counts[r.tier] || 0) + 1; } else { counts.fail++; }
+      if (r && r.ok && r.tier) { counts[r.tier] = (counts[r.tier] || 0) + 1; } else { counts.fail++; }
     });
     return counts;
   }
@@ -548,8 +550,11 @@
     res.probOnly = true;
     /* 一个标定样本都没有 → 这个百分比纯粹是关键词类型先验摊出来的常数
        （类型 1 → 254 × 90% = 90%，其余 → 254 × 5% ≈ 5%），
-       不是「这 254 个地址里有几个住宅」。UI 遇到它就不写百分比，改写类别。
-       实测：13,568 个 /24 里 743 行是这种，而且全都是同一个数 90%。 */
+       不是「这 254 个地址里有几个住宅」。所以这种行**不评级、不参与排名**：
+       实测 400 个这种行（抽自全部 13,568 个 /24）落进 (级别|得分|占比) 的
+       组合只有三个 —— A|92|90、D|5|0、D|0|0，全部由「运营商关键词是什么类型」
+       这一个查表结果决定；56 个 A 级行逐字段完全相同，名次只是字典序。
+       把查表结果包装成测量结论、还排进推荐位，不如说清「这是类型，不是评级」。 */
     res.priorOnly = calCount === 0 && priorCount > 0;
     var share = res.homeShare;
     if (share >= 0.586) { res.tier = "A"; res.tierText = "住宅为主（按运营商估算）"; }
@@ -559,6 +564,13 @@
     res.dcHeavy = res.counts[2] >= 150;
     res.hardIsp = hardIsp;
     res.ok = true;
+    /* 先验行按「未评级」处理：跟不可路由同一套机制（不进排名、不给得分、不算进各级行数），
+       但保留 counts —— 类别那一列还是真数出来的，UI 要用它写「按类型先验 · 类别」。 */
+    if (res.priorOnly) {
+      res.ungraded = true;
+      res.tier = "";
+      res.tierText = "";
+    }
     return res;
   }
 
@@ -625,7 +637,9 @@
      机房占比扣 10 分，另外 IP 归属表估算（上限）扣 5 分 —— 跟级别排序保持一致，不会出现
      “排名靠后分数反而高”的怪事。 */
   function rowScore(r) {
-    if (!r || !r.ok) { return 0; }
+    /* 没判出来的、不可路由的、未评级的都不给分：分数建立在「这个 ASN 的住宅密度」上，
+       未评级的行恰恰没有那个数据（只有关键词类型）—— 给个 32 就是在编数字。 */
+    if (!r || !r.ok || !r.tier || r.ungraded) { return 0; }
     var n = r.sampled || 0;
     var ispPct = n ? 100 * r.counts[1] / n : 0;
     var dcPct = n ? 100 * r.counts[2] / n : 0;
@@ -686,10 +700,10 @@
     if (!r || !r.probOnly) { return false; }
     return r.priorOnly === true;
   }
-  /* 先验行改写类别时用哪一类：这一行里个数最多的那个（类别才是真数过的）。
-     返回类别号，UI 拿它取语义色；homeTxt 再用它取中文名。 */
+  /* 这一行里个数最多的类别。**一个计数都没有时返回 6（其他/不明），不能返回 1** ——
+     默认值挑「住宅 ISP」等于凭空把不知道说成住宅。 */
   function topCat(r) {
-    var c = (r && r.counts) || {}, best = 6, bestN = -1;
+    var c = (r && r.counts) || {}, best = 6, bestN = 0;
     [1, 3, 2, 4, 6].forEach(function (k) {
       var v = c[k] || 0;
       if (v > bestN) { bestN = v; best = k; }
@@ -697,21 +711,33 @@
     return best;
   }
   function topCatName(r) { return CAT_NAME[topCat(r)] || "未知"; }
+  /* 住宅那一格（表格 / 详情 / 报告 / CSV / CLI 共用的唯一出处）。三种行型、四种形状：
+       - 不可路由              → `不可路由`
+       - 单个真实 IP           → `单个 IP · 类别`（样本只有它自己，谈占比没意义）
+       - 纯类型先验的打码行     → `按类型先验 · 类别`（百分比是常数，不能当占比写）
+       - 有依据的（实测 / 标定）→ `[≈]住宅数/样本数 · 占比%`
+     `≈` 只在按 ASN 概率折算的行上出现。前两种都在写类别，形状统一成
+     「<这份数的来源形态> · <类别>」—— 早先它们是两套写法，没必要。 */
   function homeTxt(r) {
     if (r && r.reserved) { return "不可路由"; }
-    if (r && r.singleHost) {
-      return "单个 IP · " + (CAT_NAME[r.host24 ? r.host24.cat : 6] || "未知");
-    }
-    /* 纯类型先验：百分比是常数（类型 1 一律 90%、其余约 5%），跟这 254/256 个地址
-       实际怎样无关 —— 写出来就是拿先验冒充占比。所以改写类别，跟单 IP 那条路一致。
-       实测 13,568 个 /24 里有 743 行是这种，而且全都是同一个数 90%。 */
+    if (r && r.singleHost) { return "单个 IP · " + (CAT_NAME[r.host24 ? r.host24.cat : 6] || "未知"); }
     if (priorOnly(r)) { return "按类型先验 · " + topCatName(r); }
     return (r && r.probOnly ? "≈" : "") + homeNum(r) + "/" + ((r && r.sampled) || 1) + " · " + homePct(r) + "%";
   }
 
+  /* 排序档次：有级别的按级别排，没级别的三种情况各有位置 ——
+       未评级（只有类型，没有样本）→ 排在 D 之后
+       不可路由 / 其他没判出来的   → 排最后
+     显式写出来，别靠 TIER_ORDER[""] === undefined 这种隐式行为（NaN 比较不可靠）。 */
+  function sortRank(r) {
+    if (r && r.ok && TIER_ORDER[r.tier] !== undefined) { return TIER_ORDER[r.tier]; }
+    if (r && r.ungraded) { return 4; }     /* 未评级：D 之后、不可路由之前 */
+    return 5;                              /* 不可路由 / 判失败 */
+  }
+
   function rankRows(rows) {
     var list = rows.slice().sort(function (a, b) {
-      var ta = TIER_ORDER[a.ok ? a.tier : "X"], tb = TIER_ORDER[b.ok ? b.tier : "X"];
+      var ta = sortRank(a), tb = sortRank(b);
       if (ta !== tb) { return ta - tb; }
       if (a.ok && b.ok) {
         var sa = rowScore(a), sb = rowScore(b);
@@ -739,20 +765,24 @@
 
   function pct(a, b) { return b ? Math.round(1000 * a / b) / 10 : 0; }
 
-  /* 行级排名表（主产物）：一行 = 你粘贴的一行，不带具体枚举结果 */
+  /* 行级排名表（主产物）：一行 = 你粘贴的一行，不带具体枚举结果。
+     `tiers` 传了就按级别筛（导出「只含 A/B」那种用法）；不传则全部导出 ——
+     包括未评级和不可路由的行：用户粘了几行，导出就该有几行，没有的格子留空，
+     不能因为我们没给级别就把他的行悄悄丢掉。 */
   function toCsv(rows, tiers, perRow) {
     perRow = perRow || 3;
     var out = [T("排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前" + perRow + ")")];
     rows.forEach(function (r) {
-      if (!r.ok || (tiers && tiers.length && tiers.indexOf(r.tier) < 0)) { return; }
+      if (!r.ok && !r.reserved) { return; }                       /* 判失败的行不进导出 */
+      if (tiers && tiers.length && (!r.tier || tiers.indexOf(r.tier) < 0)) { return; }
       var n = r.sampled || 0;
       var picks = sortCandidates(r.candidates).slice(0, perRow)
         .map(function (c) { return c.ip; }).join(" / ");
       out.push([
         r.rank || r.index, r.pattern, csvCell(cityLabel(r.city ? r.city.city : "")),
-        r.country ? r.country.cc : "", r.tier, T(r.tierText),
-        r.source || T("实测记录"), r.score,
-        csvCell(homeTxt(r)), priorOnly(r) ? "" : homePct(r),
+        r.country ? r.country.cc : "", r.tier || "", T(r.tierText || ""),
+        r.source || T("实测记录"), r.tier ? r.score : "",
+        csvCell(homeTxt(r)), (priorOnly(r) || !r.tier) ? "" : homePct(r),
         pct(r.counts[2], n), pct(r.counts[3], n), pct(r.counts[4], n),
         csvCell(picks)
       ].join(","));

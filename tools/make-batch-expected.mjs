@@ -85,11 +85,21 @@ for (const g of groups) {
   out.push("| # | 你粘的 | 级别 | 级别说明 | 住宅 | 主要城市 | 来源 | 得分 |");
   out.push("| --: | :-- | :-- | :-- | :-- | :-- | :-- | --: |");
   for (const { input, r } of g.rows) {
-    const tier = r.reserved ? "不可路由" : (r.ok ? r.tier : "—");
-    const why = r.reserved ? "不参与排名与得分" : (r.ok ? r.tierText : (r.reason || ""));
-    const home = r.reserved ? "不可路由" : Core.homeTxt(r);
+    /* 三档特殊状态先说清：不可路由、未评级（只有关键词类型）都不是「级别」，
+       表里照页面的话写，别留空 —— 空单元格看不出是「没有」还是「忘了生成」。 */
+    let tier, why, home, src, score;
+    if (r.reserved) {
+      tier = "不可路由"; why = "不参与排名与得分"; home = "不可路由"; src = "—"; score = 0;
+    } else if (r.ungraded) {
+      tier = "未评级"; why = "这个 ASN 没有标定样本，只有按关键词判的类型 → 不给级别与得分";
+      home = Core.homeTxt(r); src = srcName(r); score = "—";
+    } else if (!r.ok) {
+      tier = "—"; why = r.reason || "没判出来"; home = "—"; src = "—"; score = "—";
+    } else {
+      tier = r.tier; why = r.tierText; home = Core.homeTxt(r); src = srcName(r); score = Core.rowScore(r);
+    }
     const city = (r.city && r.city.city) || "—";
-    out.push(`| ${r.rank} | \`${input}\` → \`${r.pattern}\` | **${tier}** | ${why} | ${home} | ${cell(city)} | ${r.reserved ? "—" : srcName(r)} | ${Core.rowScore(r)} |`);
+    out.push(`| ${r.rank} | \`${input}\` → \`${r.pattern}\` | **${tier}** | ${why} | ${home} | ${cell(city)} | ${src} | ${score} |`);
   }
   out.push("");
 }
@@ -99,6 +109,8 @@ out.push("");
 out.push("## 怎么算通过");
 out.push("");
 out.push("- 表里每一行的**级别**和**得分**跟页面上一致 → 判定层没问题。");
+out.push("- **未评级**的行：级别那格写「未评级」、得分那格是「—」，而且它排在所有有级别的行之后 → 没有样本的行不该参与排名。");
+out.push("- **不可路由**的行：级别那格写「不可路由」，也不参与排名。");
 out.push("- 页面顶上统计条的数字 == 上面「统计条应该是」那一行 → 汇总没问题。");
 out.push("- 结果行数 == 批次规模里的数字 → 解析层没漏行（一行多个 IP 也要全收）。");
 out.push("- 出现任何「未识别」都是 bug（这批里没有该认不出的东西）。");
