@@ -15,7 +15,13 @@ function check(name, cond, extra) {
 const fixtures = [
   { file: "pasted-list-1.txt", expectItems: 200, expectCities: {} },
   { file: "pasted-list-2.txt", expectItems: 200, expectCities: { "Los Angeles": 200 } },
-  { file: "pasted-list-3.md",  expectItems: 10,  expectCities: { "San Jose": 6, "Los Angeles": 3, "San Francisco": 1 } }
+  { file: "pasted-list-3.md",  expectItems: 10,  expectCities: { "San Jose": 6, "Los Angeles": 3, "San Francisco": 1 } },
+  /* 脏格式混排：全角 / ? 和 x 打码 / \. 转义 / 加粗 / 表格 / 端口 / CIDR / 保留地址。
+     保留地址一律照样收下（是不是公网由判定那一层说，解析层不偷偷丢行）。 */
+  { file: "pasted-list-4.txt", expectItems: 35, expectUnmatched: 1, expectDuplicates: 1 },
+  /* 供应商清单：加粗 IP 紧贴着运营商名，每行一个 —— 解析层最容易整段丢掉的一类 */
+  { file: "pasted-list-5.txt", expectItems: 48, expectUnmatched: 0, expectDuplicates: 0,
+    expectCounts: { A: 10, B: 9, C: 9, D: 11, X: 9, fail: 0 } }
 ];
 
 for (const f of fixtures) {
@@ -25,7 +31,18 @@ for (const f of fixtures) {
   const rep = Core.parseWithReport(text);
   console.log(`\n--- ${f.file}: 行 ${rep.lineCount} / 识别 ${rep.items.length} / 重复 ${rep.duplicateCount} / 未识别 ${rep.unmatched.length}`);
   check(`${f.file} 识别条数`, rep.items.length === f.expectItems, `期望 ${f.expectItems} 实得 ${rep.items.length}`);
-  check(`${f.file} 无未识别行`, rep.unmatched.length === 0, rep.unmatched.slice(0, 3).map(u => u.line + ":" + u.text).join(" | "));
+  if (f.expectUnmatched !== undefined) {
+    check(`${f.file} 未识别行数`, rep.unmatched.length === f.expectUnmatched,
+      `期望 ${f.expectUnmatched} 实得 ${rep.unmatched.length}` +
+      (rep.unmatched.length ? "：" + rep.unmatched.slice(0, 3).map(u => u.line + ":" + u.text).join(" | ") : ""));
+  }
+  if (f.expectDuplicates !== undefined) {
+    check(`${f.file} 重复行只算一条`, rep.duplicateCount === f.expectDuplicates,
+      `期望 ${f.expectDuplicates} 实得 ${rep.duplicateCount}`);
+  }
+  if (f.expectUnmatched === undefined) {
+    check(`${f.file} 无未识别行`, rep.unmatched.length === 0, rep.unmatched.slice(0, 3).map(u => u.line + ":" + u.text).join(" | "));
+  }
   const bad = rep.items.filter(it => !Core.isValidPattern(it.pattern));
   check(`${f.file} 全部 token 合法`, bad.length === 0, bad.slice(0, 3).map(b => b.pattern).join(","));
   /* 清单里的国家/城市列一律丢弃：解析结果里不该有城市标注这种字段 */
@@ -40,6 +57,13 @@ for (const f of fixtures) {
   }
   if (f.file === "pasted-list-2.txt") {
     check("列表2 全部命中数据包", res.counts.fail === 0, `未命中 ${res.counts.fail}`);
+  }
+  if (f.expectCounts) {
+    /* 整包冻结各级行数：解析、判定、数据包任一层动了都在这儿现形 */
+    const got = { A: res.counts.A, B: res.counts.B, C: res.counts.C, D: res.counts.D, X: res.counts.X, fail: res.counts.fail };
+    const want = Object.assign({ A: 0, B: 0, C: 0, D: 0, X: 0, fail: 0 }, f.expectCounts);
+    check(`${f.file} 各级行数冻结`, JSON.stringify(got) === JSON.stringify(want),
+      `期望 ${JSON.stringify(want)} 实得 ${JSON.stringify(got)}`);
   }
 }
 
@@ -75,6 +99,61 @@ check("空格分隔四段可清洗", t4.items.length === 1 && t4.items[0].patter
 const t5 = Core.parseWithReport("198.x.42.81\n198.?.42.81\n");
 check("x / ? 打码位可清洗", t5.items.length === 1 && t5.items[0].pattern === "198.*.42.81", t5.items.map(i => i.pattern).join(","));
 
+/* ---------- 脏格式：全角 / 转义 / 加粗 / 端口 —— 都是真实粘贴里会出现的写法 ---------- */
+const dirty = [
+  ["１９８．＊．205.197", "198.*.205.197", "全角数字与全角星号"],
+  ["198\\.*.43.186",        "198.*.43.186",  "Markdown 转义的 \\*"],
+  ["198.\\*.43.186:8080",   "198.*.43.186",  "带端口要剥掉"],
+  ["**198.*.21.63**",       "198.*.21.63",   "加粗包着（两个星号）"],
+  ["*198.*.184.120*",       "198.*.184.120", "斜体包着（一个星号）"],
+  ["198.**.42.81",          "198.*.42.81",   "野写法：两个以上星号折成一个"],
+  ["`198.*.13.200`",        "198.*.13.200",  "反引号包着"],
+  ['"198.*.70.111"',        "198.*.70.111",  "英文引号包着"],
+  ["198.*.43.222 （美国 洛杉矶）", "198.*.43.222", "IP 后面跟着全角括号备注"],
+  ["198.*.243.58\t美国\t洛杉矶\t提取", "198.*.243.58", "表格制表符分隔"]
+];
+for (const [input, want, why] of dirty) {
+  const got = Core.parseWithReport(input + "\n");
+  check(why, got.items.length === 1 && got.items[0].pattern === want,
+    `期望 ${want} 实得 ${got.items.map(i => i.pattern).join(",") || "(没识别)"}`);
+}
+
+/* 加粗 IP 紧贴着运营商名 —— 整段清单最容易被丢掉的一类（实测 48 行曾只认出 2 行） */
+const bold = Core.parseWithReport("**111.169.14.1**BIGLOBE BIGLOBE Inc.\n**198.185.203.7**NTT America, Inc.\n");
+check("加粗 IP 紧贴运营商名也能认出来", bold.items.length === 2 &&
+  bold.items[0].pattern === "111.169.14.1" && bold.items[1].pattern === "198.185.203.7",
+  bold.items.map(i => i.pattern).join(",") || "(没识别)");
+check("被加粗包着的行没有整行吞掉", bold.items.length === 0 || bold.items.every(i => !i.pattern.includes("Inc")),
+  bold.items.map(i => i.pattern).join(","));
+/* 只在 token 以 * 开头时才认加粗 —— 免得把普通文字里的数字抓成 IP */
+const plainText = Core.parseWithReport("价格 1.2.3.4 美元\n共 198.3.242.16 条\n");
+check("普通文字里的 IP 照样认（加粗规则不掺和）", plainText.items.length === 2,
+  plainText.items.map(i => i.pattern).join(",") || "(没识别)");
+check("认出来的是 IP，不是被加粗规则截出来的半截", plainText.items.map(i => i.pattern).join(",") === "1.2.3.4,198.3.242.16",
+  plainText.items.map(i => i.pattern).join(","));
+
+/* 行尾那个点不能把换行一起吃掉：\s 版本会把下一行粘上来，下一行的 IP 就无声无息少一个 */
+const nl = Core.parseWithReport("**111.169.14.1**BIGLOBE Inc.\n**111.169.14.2**BIGLOBE Inc.\n**111.169.14.3**BIGLOBE Inc.\n");
+check("行尾带点的运营商名不会与下一行粘连", nl.items.length === 3,
+  `${nl.items.length} 条：` + nl.items.map(i => i.pattern).join(","));
+check("三行三行都在，一条不少", nl.items.map(i => i.pattern).join(",") === "111.169.14.1,111.169.14.2,111.169.14.3",
+  nl.items.map(i => i.pattern).join(","));
+
+/* 保留地址 / 界面噪声：解析层一律照收或明确丢弃，绝不凭空造出一个 IP */
+const reserved = Core.parseWithReport("10.0.0.1\n192.168.1.1\n127.0.0.1\n169.254.1.1\n0.0.0.0\n255.255.255.255\n224.1.1.1\n");
+check("保留地址照样收下（不做静默丢弃）", reserved.items.length === 7,
+  reserved.items.map(i => i.pattern).join(","));
+check("保留地址不落进未识别", reserved.unmatched.length === 0,
+  reserved.unmatched.map(u => u.text).join(" | "));
+/* 界面噪声：IPv6 / 域名 / 数不清的空白行一律不当成 IPv4；只有「像 IP 但多了一段」
+   这种最像的才记进未识别（4 段以上是用户真想贴的东西，静默丢掉最伤人），
+   完全不像 IP 的界面文案直接丢，免得未识别列表被噪声淹没。 */
+const noise = Core.parseWithReport("2001:db8::1\nexample.com\n已选 0 条数据：\n1.2.3.4.5\n");
+check("IPv6 / 域名 / 界面文案都不当成 IPv4", noise.items.length === 0,
+  noise.items.map(i => i.pattern).join(","));
+check("4 段以上（最像 IP 的噪声）记进未识别，不静默消失", noise.unmatched.length === 1 && noise.unmatched[0].line === 4,
+  noise.unmatched.map(u => u.line + ":" + u.text).join(" | ") || "(无)");
+
 const t6 = Core.analyze("50.*.54.100", data);
 const t7 = Core.analyze("50.*.54.100", data, { city: "San Jose", wantCity: "Los Angeles" });
 check("判定只认 IP：多余的标注参数不改变结果", t6.tier === t7.tier && t6.pctIsp === t7.pctIsp,
@@ -99,16 +178,23 @@ check("A 级内部按住宅占比降序", aRows.every((r, i) => i === 0 || aRows
 check("每行都有得分", ranked1.every((r) => typeof r.score === "number" && r.score >= 0 && r.score <= 100),
   ranked1.slice(0, 3).map((r) => r.score).join(","));
 check("行身份保持打码模式", ranked1[0].pattern.includes("*"), ranked1[0].pattern);
-/* 「建议拿」永远是一个能直接拿的 /24：打码行给排最前的候选段，不给带 * 的模式 */
+/* 「建议拿」只给一个能直接拿的 IP —— 网段没法直接拿，给了也没用；
+   第 2 段打码给排最前的住宅落点，整行就是一个网段时留空（数据里那些地址没差别） */
 {
   const rr = Core.analyze("198.*.42.81", data, {});
-  const net = Core.takeNetwork(rr);
-  check("打码行的建议拿是一个具体 /24", /^\d+\.\d+\.\d+\.0\/24$/.test(net), net || "(空)");
-  check("建议拿就是排最前的候选段", net === Core.sortCandidates(rr.candidates)[0].network, net);
-  check("建议拿的口径写得出来", /候选网段/.test(Core.takeWhy(rr)), Core.takeWhy(rr));
-  const bare = {};
-  check("没有候选段时建议拿留空", Core.takeNetwork(Object.assign(bare, rr, { candidates: [] })) === "",
-    Core.takeWhy(Object.assign({}, rr, { candidates: [] })));
+  const ip = Core.takeIp(rr);
+  check("打码行的建议拿是一个具体 IP（不带 *、不是网段）",
+    /^\d+\.\d+\.\d+\.\d+$/.test(ip) && !ip.includes("*") && !ip.includes("/"), ip || "(空)");
+  check("建议拿就是排最前的那个候选落点", ip === Core.sortCandidates(rr.candidates)[0].ip, ip);
+  check("建议拿的口径写明它是排最前的住宅落点", /住宅落点里排最前的那个/.test(Core.takeWhy(rr)), Core.takeWhy(rr));
+  /* 挑不出住宅落点时给不出来，且说清为什么 —— 不能甩一个模式出去 */
+  const none = Object.assign({}, rr, { candidates: [] });
+  check("没有住宅落点时建议拿留空", Core.takeIp(none) === "", Core.takeIp(none) || "(空)");
+  check("留空时口径说明整行没有住宅段", /没有住宅段/.test(Core.takeWhy(none)), Core.takeWhy(none));
+  /* 判定失败的行没有建议拿这一说 */
+  const bad = Core.analyze("1.2.3.4.5", data, {});
+  check("没判定出来的行建议拿留空", !bad.ok && Core.takeIp(bad) === "" && /还没判定出来/.test(Core.takeWhy(bad)),
+    bad.reason + " | " + Core.takeWhy(bad));
 }
 
 const csv1 = Core.toCsv(ranked1, ["A", "B"], 3);
@@ -129,14 +215,13 @@ check("枚举明细行数多于排名表", csvCand.split("\n").length > csvLines
   const r = Core.analyze("198.3.242.*", data, {});   // 实测记录里有 198.*.242
   check("第 4 段打码样本 = 254（跳过 .0/.255）", !!r.ok && r.sampled === 254 && r.hostRange === "1-254",
     r.ok ? `sampled=${r.sampled} hostRange=${r.hostRange}` : r.reason);
-  check("整行就是这个网段时，建议拿是它的 /24", Core.takeNetwork(r) === "198.3.242.0/24",
-    Core.takeNetwork(r) || "(空)");
-  check("整行一段的口径", /整行就是这一个网段/.test(Core.takeWhy(r)), Core.takeWhy(r));
-  /* 单个真实 IP：建议拿 = 它所在的那个 /24 */
+  /* 整行就是一整个网段：数据只到网段这一层，里面哪个地址都一样，给不出「更该拿的那个」 */
+  check("整行一整个网段时建议拿留空", Core.takeIp(r) === "", Core.takeIp(r) || "(空)");
+  check("整行一段的口径写明挑不出来", /挑不出更该拿的那个/.test(Core.takeWhy(r)), Core.takeWhy(r));
+  /* 单个真实 IP：建议拿 = 它自己（不是它所在的 /24） */
   const rOne = Core.analyze("198.3.243.16", data, {});
-  check("单个 IP 的建议拿 = 它所在的 /24", Core.takeNetwork(rOne) === "198.3.243.0/24",
-    Core.takeNetwork(rOne) || "(空)");
-  check("单个 IP 的口径", /落在这一段里/.test(Core.takeWhy(rOne)), Core.takeWhy(rOne));
+  check("单个 IP 的建议拿就是它自己", Core.takeIp(rOne) === "198.3.243.16", Core.takeIp(rOne) || "(空)");
+  check("单个 IP 的口径", /整行就这一个 IP/.test(Core.takeWhy(rOne)), Core.takeWhy(rOne));
 
   /* CIDR 写法应该跟第 4 段打码走同一条路 */
   const cidr = Core.parseInput("198.3.242.0/24")[0];

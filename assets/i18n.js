@@ -169,7 +169,14 @@
     [/建议拿/, "Take"],
     [/第 4 段是打码位：按这个网段的 254 个可用地址（1–254）统计，\.0 网络地址 \/ \.255 广播地址已跳过/,
       "The 4th octet is masked: counted over this /24's 254 usable addresses (1–254); .0 (network) and .255 (broadcast) are skipped"],
-    [/该行枚举取值里排最前的那个网段/, "the top /24 among this row's enumerated values"],
+    /* 建议拿那一格的口径（core.js 拼的 title）：给的是哪个 IP，或者为什么给不出来 */
+    [/整行就这一个 IP，拿这个/, "this row is a single IP — take it"],
+    [/整行 ([\d,]+) 个住宅落点里排最前的那个，其余在下面的热度图上/,
+      "the top one of this row's $1 residential hosts; the rest are on the heat map below"],
+    [/整行枚举出的 ([\d,]+) 个落点里没有住宅段，这一行不给建议/,
+      "no residential host among the $1 values this row enumerates, so nothing is suggested"],
+    [/整行是一整个网段的 254 个可用地址，数据里它们没有差别，挑不出更该拿的那个/,
+      "this row is one /24's 254 usable addresses — the data cannot tell them apart, so there is no single pick"],
     [/住宅 0%（联网核验判定为机房）/, "residential 0% (online check says datacenter)"],
     [/住宅 ≈([\d,]+)\/([\d,]+) · ([\d.]+)%/, "residential ≈$1/$2 · $3%"],
     [/住宅 /, "residential "],
@@ -374,12 +381,12 @@
 
   /* ---------- 导出 CSV 的表头 / 复制出去的文本（不经过 DOM，得单独翻） ---------- */
   ENTRIES.push(
-    [/排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,建议拿的网络,参考枚举IP\(前([\d]+)\)/,
-      "Rank,IP pattern,Main city,Main country,Tier,Tier note,Source,Score,Residential,Residential %,Datacenter %,Business %,Mobile %,Suggested network,Reference hosts (top $1)"],
-    [/排名,IP模式,建议拿的网络,枚举IP,城市,运营商,类别,都会区标记/,
-      "Rank,IP pattern,Suggested network,Host IP,City,Carrier,Category,Metro"],
-    [/排名\tIP模式\(整行\)\t级别\t说明\t得分\t住宅\t建议拿的网络/,
-      "Rank\tIP pattern (whole row)\tTier\tNote\tScore\tResidential\tSuggested network"],
+    [/排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,建议拿的 IP,参考枚举IP\(前([\d]+)\)/,
+      "Rank,IP pattern,Main city,Main country,Tier,Tier note,Source,Score,Residential,Residential %,Datacenter %,Business %,Mobile %,Suggested IP,Reference hosts (top $1)"],
+    [/排名,IP模式,枚举IP,城市,运营商,类别,都会区标记/,
+      "Rank,IP pattern,Host IP,City,Carrier,Category,Metro"],
+    [/排名\tIP模式\(整行\)\t级别\t说明\t得分\t住宅\t建议拿的 IP/,
+      "Rank\tIP pattern (whole row)\tTier\tNote\tScore\tResidential\tSuggested IP"],
     [/\t得分 /, "\tscore "],
     [/\t住宅 /, "\tresidential "],
     [/\t建议拿 /, "\ttake "],
@@ -432,6 +439,7 @@
           "\n" +
           "随便粘：整张表、一列 IP、混着备注的一堆 IP，都认 —— 只读 IP，序号和其它列不看。\n" +
           "198 3 242 16 这种空格分隔也认；打码位也认 ? 和 x（198.?.42.81），CIDR 按它盖住的网段收。\n" +
+          "Markdown 的加粗也认（**198.*.42.81**，或者加粗紧贴着运营商名），全角、行尾带端口都照收。\n" +
           "第 2 段打码 → 256 个网段；第 4 段打码 → 254 个可用地址；结论落回整行。",
         en: "198.*.205.197\n" +
           "82.24.73.*\n" +
@@ -440,6 +448,7 @@
           "\n" +
           "Paste anything: a whole table, one column, or a pile of IPs mixed with notes — only the IPs are read, and numbering and other columns are ignored.\n" +
           "Space-separated octets (198 3 242 16) work too; a masked octet may also be written ? or x (198.?.42.81), and a CIDR expands to the /24 blocks it covers.\n" +
+          "Markdown emphasis is read too (**198.*.42.81**, or bolded right against a carrier name), along with full-width text and a trailing port.\n" +
           "2nd octet masked → 256 /24 blocks; 4th octet masked → 254 usable addresses; the verdict stays on the whole row."
       }
     }

@@ -326,8 +326,10 @@
         : (r.singleHost ? "你粘贴的这一行是一个真实 IP，样本只有它自己 —— 没有占比可言，直接看它归哪一类"
           : "实测记录：住宅网段数 / 样本数 · 占比");
       var ispCell = '<div class="tcell"><div class="stack">' + stack + '</div>' +
-        /* 单个 IP 没有占比，颜色跟着它的类别走；打码行才按住宅占比分档 */
-        '<span class="share sc ' + (r.singleHost ? CAT_TONE[r.host24 ? r.host24.cat : 6] : Core.shareBand(Core.homePct(r))) + '" title="' + esc(homeTitle) + '">' +
+        /* 单个 IP 没有占比，颜色跟着它的类别走；打码行才按住宅占比分档。
+           这里只借语义色的 t-* 上色 —— 别再挂 sc：那是得分那一格的字号，
+           两条规则撞上，这一格的 13px 会被顶成 14px/700。 */
+        '<span class="share t-' + (r.singleHost ? CAT_TONE[r.host24 ? r.host24.cat : 6] : Core.shareBand(Core.homePct(r))) + '" title="' + esc(homeTitle) + '">' +
         esc(homeTxt) + '</span></div>';
       /* 来源列只说「这份判断的数据从哪来」；核验结论是另一回事，附在悬停里，不往来源上贴 */
       var srcText = rowSrcWhy(r) + (r.online
@@ -430,9 +432,10 @@
       "</div>";
     /* 定义格：标签一列对齐，值一列 —— 不再是一串挤在一起的行内文本 */
     var defs = [];
-    /* 建议拿：永远是一个能直接拿的 /24（打码行给排最前的候选段，不甩一个带 * 的模式回去） */
+    /* 建议拿：只给一个能直接拿的 IP（打码行给排最前的住宅落点），挑不出就给不出来 */
+    var take = Core.takeIp(r);
     defs.push(["建议拿", '<b class="net" title="' + esc(Core.takeWhy(r)) + '">' +
-      esc(Core.takeNetwork(r) || "—") + "</b>", ""]);
+      esc(take || "—") + "</b>", ""]);
     defs.push(["来源", rowSrcName(r), rowSrcWhy(r)]);
     /* 说明统一成一句话：<口径> · <数据源>［，<分布>］。
        分布只在真的枚举过多个取值时给 —— 单个 IP / 单个网段写它没有意义。 */
@@ -621,7 +624,7 @@
     $("closeD").onclick = closeDetail;
     if ($("copyRow")) {
       $("copyRow").onclick = function () {
-        copy(T("排名 #" + r.rank + "  " + r.pattern + "  [" + r.tier + " " + r.tierText + "]  建议拿 " + Core.takeNetwork(r)) + "\n" +
+        copy(T("排名 #" + r.rank + "  " + r.pattern + "  [" + r.tier + " " + r.tierText + "]  建议拿 " + Core.takeIp(r)) + "\n" +
           cands.map(function (c) { return c.ip + "  " + Core.cityLabel(c.city) + "  " + c.isp; }).join("\n"),
           "已复制本行 " + cands.length + " 个枚举落点");
       };
@@ -853,10 +856,10 @@
       if (!r.ok || (r.tier !== "A" && r.tier !== "B")) { return; }
       out.push("#" + r.rank + "\t" + r.pattern + "\t" + r.tier + "\t" + r.tierText +
         T("\t得分 ") + r.score + T("\t住宅 ") + Core.homeTxt(r) +
-        T("\t建议拿 ") + Core.takeNetwork(r));
+        T("\t建议拿 ") + Core.takeIp(r));
     });
     if (!out.length) { toast("没有 A/B 级结果"); return; }
-    copy(T("排名\tIP模式(整行)\t级别\t说明\t得分\t住宅\t建议拿的网络") + "\n" + out.join("\n"),
+    copy(T("排名\tIP模式(整行)\t级别\t说明\t得分\t住宅\t建议拿的 IP") + "\n" + out.join("\n"),
       "已复制 A/B 级排名（一行一个）");
   }
 

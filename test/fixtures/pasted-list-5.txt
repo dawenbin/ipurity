@@ -1,0 +1,52 @@
+# 供应商发来的一张清单：加粗的 IP 后面紧跟着运营商名（真实粘贴的样子）
+
+**198.72.205.167**Charter Communications
+**198.0.205.31**Comcast Cable Communications
+**198.14.205.213**Windstream Communications LLC
+**198.11.205.174**SoftLayer
+**198.12.205.187**GoDaddy.com, LLC
+**198.23.205.130**HostPapa
+**198.65.205.76**NTT America, Inc.
+**198.138.205.225**NTT America, Inc.
+**198.2.205.57**PEG TECH INC
+**198.166.205.189**TELUS Communications Inc
+**198.227.205.182**T-Mobile USA, Inc.
+**198.228.205.195**AT&T Enterprises, LLC
+**198.24.205.143**TPx Communications
+**198.178.205.145**Kaiwan Corporation
+**198.211.205.174**TPx Communications
+**207.190.252.101**Windstream Communications LLC
+**207.6.252.109**TELUS Communications Inc
+**207.10.252.161**Windstream Communications LLC
+**207.21.252.104**Amazon.com, Inc.
+**207.44.252.203**SoftLayer
+**207.46.252.229**Microsoft Corporation
+**207.12.252.187**Sprint
+**207.99.252.118**Los Angeles County Office of Education
+**207.128.252.95**American Honda Motor Company, Inc.
+**207.214.252.213**AT&T Enterprises, LLC
+**207.104.252.183**AT&T Enterprises, LLC
+**207.213.252.200**AT&T Enterprises, LLC
+**207.117.252.152**British Telecommunications PLC
+**207.140.252.51**AT&T Enterprises, LLC
+**207.141.252.64**AT&T Enterprises, LLC
+**69.75.96.206**Charter Communications Inc
+**69.122.96.217**Cablevision Systems Corp.
+**69.14.96.213**WideOpenWest Finance LLC
+**69.163.96.150**CHINA TELECOM (AMERICAS) CORPORATION
+**69.174.96.93**PacketExchange
+**69.13.96.200**CoreSpace, Inc.
+**69.6.96.109**St. Lawrence University
+**69.8.96.135**Jasper County REMC
+**69.15.96.226**Microsoft Corporation
+**69.55.96.146**UBTANET
+**69.109.96.48**AT&T Enterprises, LLC
+**69.152.96.207**AT&T Enterprises, LLC
+**69.108.96.35**AT&T Enterprises, LLC
+**69.220.96.91**AT&T Enterprises, LLC
+**69.0.96.31**AT&T Enterprises, LLC
+
+# 同一张清单里混着别的写法，也照收
+| 47 | **198.72.205.121** | 美国 | 洛杉矶 | 提取 |
+198.*.42.81
+198.3.181.0/24

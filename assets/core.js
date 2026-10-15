@@ -35,6 +35,12 @@
      （.0 是网络地址、.255 是广播地址，都不是能拿的主机） */
   var HOST_LO = 1, HOST_HI = 254;
   var TOKEN = /^(\d{1,3}|\*)(?:\.(\d{1,3}|\*)){3}$/;
+  var CIDR = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
+  /* 清单里 IP 常被 Markdown 加粗：**198.*.42.81**、*198.*.42.81*，
+     或者加粗紧贴着后面的运营商名（**111.169.14.1**BIGLOBE）。这两种只在
+     token **以 * 开头**时才去认 —— 不然普通文字里的数字会被误抓成 IP。 */
+  var BOLD_TOKEN = /^\*{1,2}((?:\d{1,3}|\*)(?:\.(?:\d{1,3}|\*)){3})(?:\*{1,2})?(?=$|[^.\d*])/;
+  var BOLD_CIDR = /^\*{1,2}(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\/\d{1,2})(?:\*{1,2})?(?=$|[^.\d*])/;
 
   /* 城市名一律用 DB-IP 的原文（英文）—— 不做本地化：译名表永远收不全，
      一份清单里就会中英混排（Albuquerque + Absecon 这种），还得跟着库更新维护。
@@ -55,7 +61,10 @@
       .replace(/[．。｡]/g, ".")                     // 全角句点
       .replace(/[＊ｘ×]/g, "*")                     // 全角星号/乘号（半角 x 在 token 级处理，避免破坏英文城市名）
       .replace(/[│┃]/g, "|")                        // 全角竖线
-      .replace(/\s*\.\s*/g, ".")                    // 段间空格
+      /* 段间空格：只吃行内的空格/制表符。这里**不能**用 \s —— 清单里
+         「BIGLOBE Inc.」这种行尾带点的写法很常见，\s 会把换行一起吃掉，
+         下一行就跟这行粘成一行，那一行的 IP 会无声无息地少掉一个。 */
+      .replace(/[^\S\r\n]*\.[^\S\r\n]*/g, ".")
       .replace(/[，、；]/g, " ")
       .replace(/[（(]/g, " ")
       .replace(/[）)]/g, " ");
@@ -81,12 +90,18 @@
 
       for (var j = 0; j < toks.length; j++) {
         var tk = toks[j].replace(/^[`'"]+|[`'"]+$/g, "").replace(/:\d{1,5}$/, "");   // 去引号/端口
-        var cidr = tk.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
-        if (cidr) { found = tk; isCidr = true; break; }
-        if (TOKEN.test(tk)) { found = tk.replace(/\*{2,}/g, "*"); break; }
-        // 打码位写成 ?：198.?.42.81
-        var q = tk.replace(/\?/g, "*").replace(/[xX×]/g, "*");
+        if (CIDR.test(tk)) { found = tk; isCidr = true; break; }
+        if (TOKEN.test(tk)) { found = tk; break; }
+        /* 换一种写法再认一遍：打码位写成 ? 或 x（198.?.42.81），
+           两个以上星号折成一个（198.**.42.81 这种野写法）。 */
+        var q = tk.replace(/\?/g, "*").replace(/[xX×]/g, "*").replace(/\*{2,}/g, "*");
+        if (CIDR.test(q)) { found = q; isCidr = true; break; }
         if (TOKEN.test(q)) { found = q; break; }
+        // 还被 Markdown 强调符包着 / 紧贴着说明文字
+        var mc = q.match(BOLD_CIDR);
+        if (mc) { found = mc[1]; isCidr = true; break; }
+        var mt = q.match(BOLD_TOKEN);
+        if (mt) { found = mt[1]; break; }
       }
 
       if (!found) {                                     // 退路：空格分隔的四段
@@ -97,7 +112,7 @@
 
       var patterns;
       if (isCidr) {
-        var mm = found.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/);
+        var mm = found.match(CIDR);
         var bits = +mm[5], o1 = +mm[1], o2 = +mm[2], o3 = +mm[3], n;
         patterns = [];
         if (bits < 16) {
@@ -626,29 +641,31 @@
     return list;
   }
 
-  /* 「建议拿」这一格：三种行各自给出一个能直接拿的 /24，永远不带 *。
-       整行就是一个网段（单个 IP / 第 4 段打码 / 网段本身）→ 就是这个网段；
-       整行含 256 个候选网段（第 2 / 3 段打码）→ 排最前的那个候选;
-       一个住宅段都没有 → 空字符串。 */
-  function takeNetwork(r) {
+  /* 「建议拿」这一格：只给一个能直接拿的 IP —— 网段没法直接拿，给了也没用。
+     整行就是一个真实 IP → 就是它；
+     第 2 段打码 → 256 个取值排出来，给排最前的那个住宅落点；
+     整行是一整个网段（第 4 段打码 / 网段写法）→ 数据只到网段这一层，
+     里面哪个地址都一样，挑不出更该拿的，这一格就留空。 */
+  function takeIp(r) {
     if (!r || !r.ok) { return ""; }
-    if (r.starPos === 1 || r.starPos === 2) {
+    if (r.singleHost) { return String(r.pattern); }
+    if (r.starPos === 1) {
       var c = sortCandidates(r.candidates)[0];
-      return c ? c.network : "";
+      return c ? c.ip : "";
     }
-    return String(r.pattern).split(".").slice(0, 3).join(".") + ".0/24";
+    return "";
   }
-  /* 上面那一格的口径：只有打码行才有「候选」这回事 */
+  /* 上面那一格的口径：为什么是它，或者为什么没有 */
   function takeWhy(r) {
-    if (!r || (r.starPos !== 1 && r.starPos !== 2)) {
-      return r && r.singleHost
-        ? "这一行就是一个 IP，它落在这一段里"
-        : "整行就是这一个网段（254 个可用地址）";
+    if (!r || !r.ok) { return "这一行还没判定出来"; }
+    if (r.singleHost) { return "整行就这一个 IP，拿这个"; }
+    if (r.starPos === 1) {
+      var n = sortCandidates(r.candidates).length;
+      return n
+        ? "整行 " + n + " 个住宅落点里排最前的那个，其余在下面的热度图上"
+        : "整行枚举出的 " + (r.sampled || 256) + " 个落点里没有住宅段，这一行不给建议";
     }
-    var n = sortCandidates(r.candidates).length;
-    return n
-      ? "整行有 " + n + " 个住宅候选网段，这是排最前的那个；其余在下面的热度图上"
-      : "整行枚举出的 " + (r.sampled || 256) + " 个网段里没有住宅段";
+    return "整行是一整个网段的 254 个可用地址，数据里它们没有差别，挑不出更该拿的那个";
   }
 
   /* 实测数据包是按 o1.*.o3 收录的：给出这个模式下要查的键（查不到就得走 IP 归属表） */
@@ -666,7 +683,7 @@
   /* 行级排名表（主产物）：一行 = 你粘贴的一行，不带具体枚举结果 */
   function toCsv(rows, tiers, perRow) {
     perRow = perRow || 3;
-    var out = [T("排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,建议拿的网络,参考枚举IP(前" + perRow + ")")];
+    var out = [T("排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,建议拿的 IP,参考枚举IP(前" + perRow + ")")];
     rows.forEach(function (r) {
       if (!r.ok || (tiers && tiers.length && tiers.indexOf(r.tier) < 0)) { return; }
       var n = r.sampled || 0;
@@ -678,7 +695,7 @@
         r.source || T("实测记录"), r.score,
         csvCell(homeTxt(r)), homePct(r),
         pct(r.counts[2], n), pct(r.counts[3], n), pct(r.counts[4], n),
-        takeNetwork(r), csvCell(picks)
+        takeIp(r), csvCell(picks)
       ].join(","));
     });
     return out.join("\n");
@@ -687,16 +704,16 @@
   /* 枚举明细（附件产物）：一行 = 打码模式下某一种第 2 段取值的落点 */
   function toCsvCandidates(rows, tiers, perRow) {
     perRow = perRow || 25;
-    var out = [T("排名,IP模式,建议拿的网络,枚举IP,城市,运营商,类别,都会区标记")];
+    var out = [T("排名,IP模式,枚举IP,城市,运营商,类别,都会区标记")];
     rows.forEach(function (r) {
       if (!r.ok || (tiers && tiers.length && tiers.indexOf(r.tier) < 0)) { return; }
       if (r.singleHost) {
-        out.push([r.rank || r.index, r.pattern, r.host24.network, r.pattern, csvCell(r.host24.city),
+        out.push([r.rank || r.index, r.pattern, r.pattern, csvCell(r.host24.city),
                   csvCell(r.host24.isp), T(CAT_NAME[r.host24.cat] || ""), r.host24.metro ? 1 : 0].join(","));
         return;
       }
       sortCandidates(r.candidates).slice(0, perRow).forEach(function (c) {
-        out.push([r.rank || r.index, r.pattern, takeNetwork(r), c.ip, csvCell(c.city),
+        out.push([r.rank || r.index, r.pattern, c.ip, csvCell(c.city),
                   csvCell(c.isp), T(CAT_NAME[1]), c.metro ? 1 : 0].join(","));
       });
     });
@@ -711,7 +728,7 @@
     analyzeItem: analyzeItem, analyzeMany: analyzeMany, countRows: countRows,
     applyOnline: applyOnline,
     sortCandidates: sortCandidates, toCsv: toCsv, toCsvCandidates: toCsvCandidates,
-    rankRows: rankRows, rowScore: rowScore, takeNetwork: takeNetwork, takeWhy: takeWhy,
+    rankRows: rankRows, rowScore: rowScore, takeIp: takeIp, takeWhy: takeWhy,
     scoreBand: scoreBand,
     patternKey: patternKey,
     countryHist: countryHist, cityHist: cityHist,
