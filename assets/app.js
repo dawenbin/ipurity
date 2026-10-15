@@ -484,7 +484,10 @@
         "占比已按 ASN 级不确定性封顶：抽样再干净也不代表这个网段一定干净 —— 同一个 ASN 下就有对方机房/企业客户的段" +
         "（例如 177.202.126.0/24 挂在 KT 下面，但整段是 Ace Data Centers 的机房）。");
     }
-    if (r.singleHost) { chips2 += rtag("c", "单个 IP", "清单里的这一行就是一个真实 IP，没有占比可言，直接看它归哪一类。"); }
+    if (r.singleHost) {
+      chips2 += rtag("c", "单个 IP",
+        "清单里的这一行就是一个真实 IP，没有占比可言，直接看它归哪一类；下面那张图画的是它所在网段的 254 个可用地址。");
+    }
     if (r.online) {
       var on = r.online;
       var onWhy = (on.provider ? on.provider + "：" : "") + (r.onlineNote || on.why || "") +
@@ -503,15 +506,30 @@
       ? '<div class="legend"><span><i style="background:var(--isp);outline:2px solid var(--la);outline-offset:-2px"></i>洛杉矶都会区</span></div>'
       : "";
     var body;
+    /* 单个真实 IP 这一行就是一个地址，图里画的是它所在的那整个网段（254 个可用地址）——
+       跟「第 4 段打码」同一种画法：这一行的结论本来就来自这个网段的记录。 */
+    var single = r.singleHost;
     if (fromGlobal) {
-      var asns = Object.keys(r.asnHist).map(function (a) { return [a, r.asnHist[a]]; })
+      /* 单个 IP 的取值数是 1，图却要铺满它那个网段：这里的分布按网段里那 254 个地址现数一遍 */
+      var hist = r.asnHist, histN = r.sampled;
+      if (single) {
+        hist = {}; histN = 0;
+        var p24 = r.pattern.split(".");
+        for (var v4 = 1; v4 <= 254; v4++) {
+          var e4 = (World && World.asnOf) ? World.asnOf(p24[0] + "." + p24[1] + "." + p24[2] + "." + v4) : null;
+          if (!e4) { continue; }
+          hist[e4.asn] = (hist[e4.asn] || 0) + 1;
+          histN++;
+        }
+      }
+      var asns = Object.keys(hist).map(function (a) { return [a, hist[a]]; })
         .sort(function (a, b) { return b[1] - a[1]; }).slice(0, 6);
       body = '<div class="heat" id="heat"></div>' +
         legend +
-        '<p class="mono-s" style="margin-top:8px">ASN 分布 · ' + (r.sampled || 256) + ' 个取值</p>' +
+        '<p class="mono-s" style="margin-top:8px">ASN 分布 · ' + (histN || 256) + ' 个取值</p>' +
         '<div class="cands asn">' + asns.map(function (p) {
           var e = World && World.byNumber ? World.byNumber(p[0]) : null;
-          return '<div class="c"><span class="mono-s">AS' + p[0] + "</span><b>" + p[1] + "/" + (r.sampled || 256) + "</b><span>" +
+          return '<div class="c"><span class="mono-s">AS' + p[0] + "</span><b>" + p[1] + "/" + (histN || 256) + "</b><span>" +
             esc(e ? e.name : "") + "</span><span class='mono-s' title=\"" + esc(e ? e.name : "") + "\">" +
             esc(e ? e.cc + " · " + Core.CAT_NAME[e.t] : "") + "</span></div>";
         }).join("") + "</div>" +
@@ -535,7 +553,9 @@
 
     /* 标题行只负责「这是哪一行」：级别/得分都在下面 .verdict 里，不重复第二遍 */
     host.innerHTML = drawer("#" + r.rank + " · " + esc(r.pattern),
-      '<button id="copyRow">复制本行候选</button> <button class="ghost" id="closeD">关闭</button>',
+      /* 单个 IP 没有枚举出来的候选可复制，这个按钮就别摆出来了 */
+      (cands.length ? '<button id="copyRow">复制本行候选</button> ' : "") +
+      '<button class="ghost" id="closeD">关闭</button>',
       '<div class="dbd">' + verdict + compBar + kv + body + "</div>");
 
     if ($("heat")) {
@@ -543,9 +563,11 @@
       if (fromGlobal) {
         /* IP 归属表：每个取值的颜色按 ASN 类型，住宅概率高的直接画绿 */
         var parts = r.pattern.split(".");
-        var hFrom = r.starPos === 3 ? 1 : 0, hTo = r.starPos === 3 ? 254 : 255;
+        /* 打码在第 4 段、或者这一行本来就是单个 IP：画它那个网段的 254 个可用地址 */
+        var pos = r.starPos < 0 ? 3 : r.starPos;
+        var hFrom = pos === 3 ? 1 : 0, hTo = pos === 3 ? 254 : 255;
         for (var y2 = hFrom; y2 <= hTo; y2++) {
-          var q = parts.slice(); q[r.starPos] = String(y2);
+          var q = parts.slice(); q[pos] = String(y2);
           var ipx = q.join(".");
           var e = World && World.asnOf ? World.asnOf(ipx) : null;
           var p = e ? World.prob(e) : 0;
@@ -559,7 +581,8 @@
       } else {
         /* 实测记录：第 2 段打码 = 256 个网段各一格；第 4 段打码 = 同一个网段的 254 个可用地址。 */
         var codes = DATA.prefixes[r.key].c.split(","), cities = DATA.prefixes[r.key].g.split(","), isps = DATA.prefixes[r.key].i.split(",");
-        var one24 = r.starPos === 3;
+        /* 单个 IP 同样按它所在的那个网段画（实测记录是 /24 粒度，整段一个类别） */
+        var one24 = r.starPos === 3 || r.singleHost;
         var hLo = one24 ? 1 : 0, hHi = one24 ? 254 : 255;
         for (var y = hLo; y <= hHi; y++) {
           /* 一个网段一格：实测记录按 /24 存，索引是打码那一位的「段内序号」 */
@@ -575,11 +598,13 @@
       tipBind($("heat"));
     }
     $("closeD").onclick = closeDetail;
-    $("copyRow").onclick = function () {
-      copy(T("排名 #" + r.rank + "  " + r.pattern + "  [" + r.tier + " " + r.tierText + "]  建议拿 " + Core.maskedNetwork(r.pattern)) + "\n" +
-        cands.map(function (c) { return c.ip + "  " + Core.cityLabel(c.city) + "  " + c.isp; }).join("\n"),
-        "已复制本行 " + cands.length + " 个枚举落点");
-    };
+    if ($("copyRow")) {
+      $("copyRow").onclick = function () {
+        copy(T("排名 #" + r.rank + "  " + r.pattern + "  [" + r.tier + " " + r.tierText + "]  建议拿 " + Core.maskedNetwork(r.pattern)) + "\n" +
+          cands.map(function (c) { return c.ip + "  " + Core.cityLabel(c.city) + "  " + c.isp; }).join("\n"),
+          "已复制本行 " + cands.length + " 个枚举落点");
+      };
+    }
     /* 单 IP 实测报告：拿这一行的代表落点去 RDAP / DoH(PTR·Cymru) 取证，
        页面默认不联网，点报告里的「实测取证」才发请求。 */
     if (window.IPReport && IPReport.mount) {
@@ -884,6 +909,26 @@
   }
 
   initData();
+
+  /* ---------- 顶栏 Star 数 ----------
+     数字来自本站自己的 data/star.json（定时任务每天刷新一次），页面不调第三方接口 ——
+     匿名接口按 IP 限流，被限流时页面上就只剩一个图标。文件取不到就只留图标，
+     不显示 0，也不编数字。 */
+  function paintStars(n) {
+    var b = $("ghStars");
+    if (!b || typeof n !== "number" || !isFinite(n)) { return; }
+    b.textContent = n >= 1000 ? Math.round(n / 100) / 10 + "k" : String(n);
+    b.hidden = false;
+  }
+  function loadStars() {
+    if (!$("ghStars") || !window.fetch) { return; }
+    fetch("data/star.json")
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) { if (j) { paintStars(j.stars); } })
+      .catch(function () {});
+  }
+  loadStars();
+
   try {
     var saved = localStorage.getItem("ippa.input");
     if (saved) { $("input").value = saved; }

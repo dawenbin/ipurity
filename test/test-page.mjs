@@ -43,6 +43,10 @@ for (const f of ["data/global-pack.bin", "data/global-asn.js", "data/asn-calib.j
   check(`存在 ${f}`, existsSync(join(root, f)));
 }
 
+// 顶栏那个星数：页面读的就是这个文件，缺了页面上就只剩一个图标
+const star = JSON.parse(readFileSync(join(root, "data", "star.json"), "utf8"));
+check("data/star.json 里有星数", Number.isInteger(star.stars) && star.stars >= 0, JSON.stringify(star));
+
 // 数据包与核心的约定：字段齐全、每个前缀的 c/i/g 都是 256 位
 const data = JSON.parse(readFileSync(join(root, "data", "segments-data.json"), "utf8"));
 const badShape = [];

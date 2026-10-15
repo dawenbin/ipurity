@@ -39,6 +39,7 @@
     [/IP 归属表/, "IP owner table"],
     [/城市数据/, "city data"],
     [/规则 \/ 来源/, "Rules / sources"],
+    [/GitHub 仓库 · Star 数/, "GitHub repo · star count"],
     [/① 粘贴清单/, "① Paste your list"],
     [/② 分级结果/, "② Ranking"],
     [/判定/, "Judge"],
@@ -177,8 +178,8 @@
     [/占比已按 ASN 级不确定性封顶：抽样再干净也不代表这个网段一定干净 —— 同一个 ASN 下就有对方机房\/企业客户的段（例如 177\.202\.126\.0\/24 挂在 KT 下面，但整段是 Ace Data Centers 的机房）。/,
       "The share is capped because of ASN-level uncertainty: a clean sample does not make this /24 clean — the same ASN also holds other parties' datacenter and enterprise blocks (e.g. 177.202.126.0/24 sits under KT but the whole block belongs to Ace Data Centers)."],
     [/单个 IP/, "single IP"],
-    [/清单里的这一行就是一个真实 IP，没有占比可言，直接看它归哪一类。/,
-      "This row is a single real IP, so there is no share to speak of — it is just classified."],
+    [/清单里的这一行就是一个真实 IP，没有占比可言，直接看它归哪一类；下面那张图画的是它所在网段的 254 个可用地址。/,
+      "This row is a single real IP, so there is no share to speak of — it is just classified. The map below covers the 254 usable addresses of the /24 it sits in."],
     [/你粘贴的这一行是一个真实 IP，样本只有它自己 —— 没有占比可言，直接看它归哪一类/,
       "This row is a single real IP, so the sample is just itself — no share to speak of, only which class it falls into"],
     [/实测记录：住宅网段数 \/ 样本数 · 占比/, "measured records: residential /24 blocks / sample size · share"],
@@ -427,21 +428,21 @@
          那是用户自己的标注，摆在这儿会让人以为工具会拿它当依据）。
          两种语言的排版必须一模一样，所以中英各写一份（DOM 里那份也得跟上）。 */
       placeholder: {
-        zh: "1\t198.*.205.197\n" +
-          "2\t82.24.73.*\n" +
-          "3\t198.3.242.0/24\n" +
-          "4\t198.3.243.16\n" +
+        zh: "198.*.205.197\n" +
+          "82.24.73.*\n" +
+          "198.3.242.0/24\n" +
+          "198.3.243.16\n" +
           "\n" +
-          "整表直粘：只读 IP 那一列，也可以只贴一列；198 3 242 16 这种空格分隔也认。\n" +
-          "打码位也认 ? 和 x（198.?.42.81）；CIDR 按它盖住的网段收。\n" +
+          "随便粘：整张表、一列 IP、混着备注的一堆 IP，都认 —— 只读 IP，序号和其它列不看。\n" +
+          "198 3 242 16 这种空格分隔也认；打码位也认 ? 和 x（198.?.42.81），CIDR 按它盖住的网段收。\n" +
           "第 2 段打码 → 256 个网段；第 4 段打码 → 254 个可用地址；结论落回整行。",
-        en: "1\t198.*.205.197\n" +
-          "2\t82.24.73.*\n" +
-          "3\t198.3.242.0/24\n" +
-          "4\t198.3.243.16\n" +
+        en: "198.*.205.197\n" +
+          "82.24.73.*\n" +
+          "198.3.242.0/24\n" +
+          "198.3.243.16\n" +
           "\n" +
-          "Paste a whole table: only the IP column is read; a single column works too, and space-separated octets (198 3 242 16) are accepted.\n" +
-          "A masked octet may also be written ? or x (198.?.42.81); a CIDR expands to the /24 blocks it covers (as short as /16).\n" +
+          "Paste anything: a whole table, one column, or a pile of IPs mixed with notes — only the IPs are read, and numbering and other columns are ignored.\n" +
+          "Space-separated octets (198 3 242 16) work too; a masked octet may also be written ? or x (198.?.42.81), and a CIDR expands to the /24 blocks it covers.\n" +
           "2nd octet masked → 256 /24 blocks; 4th octet masked → 254 usable addresses; the verdict stays on the whole row."
       }
     }

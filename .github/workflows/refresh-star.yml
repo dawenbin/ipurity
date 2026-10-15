@@ -1,0 +1,40 @@
+# 每天刷新顶栏那个星数：取一次仓库信息 → data/star.json
+#
+# 星数没变就不提交（见 tools/refresh-star.mjs）—— 页面读的是本站自己的文件，
+# 所以这个数字到不了位时页面只留一个图标，不会去调第三方接口。
+
+name: refresh star count
+
+on:
+  schedule:
+    - cron: "41 3 * * *"          # 每天 03:41 UTC，错开另外两个刷新任务
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 取星数 → data/star.json
+        id: star
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/refresh-star.mjs
+
+      - name: 提交并推送
+        if: steps.star.outputs.changed == 'true'
+        run: |
+          git config user.name "ipurity-bot"
+          git config user.email "ipurity-bot@users.noreply.github.com"
+          git add data/star.json
+          git commit -m "data: refresh the star count"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || exit 1
+            if git push; then pushed=1; break; fi
+            echo "push rejected, retrying in 15s"; sleep 15
+          done
+          test -n "$pushed"
