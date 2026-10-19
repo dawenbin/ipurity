@@ -272,6 +272,30 @@
     });
   }
 
+  /* 「联网核验」用的轻量证据：只问 RDAP + DoH PTR，不碰 Cymru / RIPEstat / Shodan。
+     这两条足够回答「这个 IP 的注册持有者是谁、反向名像不像机房」，
+     而且请求量小，可以给推荐行批量补。查不到照实写 error。 */
+  function lookupRowEvidence(ip, opts) {
+    opts = opts || {};
+    var ms = opts.timeoutMs || 9000;
+    var dohHeaders = { Accept: "application/dns-json" };
+    return Promise.all([
+      tryChain([
+        { label: "rdap.org", source: "RDAP", url: RDAP + ip, ms: ms, parse: function (j) { return parseRdap(j, ip); } }
+      ]),
+      tryChain([
+        { label: "cloudflare-doh", source: "DoH", url: DOH + "?name=" + encodeURIComponent(revArpa(ip)) + "&type=PTR", ms: ms, headers: dohHeaders, parse: function (j) { return parseDohPtr(j, ip); } },
+        { label: "google-doh", source: "DoH", url: DOH_ALT + "?name=" + encodeURIComponent(revArpa(ip)) + "&type=PTR", ms: ms, parse: function (j) { return parseDohPtr(j, ip); } }
+      ])
+    ]).then(function (a) {
+      return {
+        ip: ip, at: new Date().toISOString(),
+        rdap: a[0], ptr: a[1],
+        anyOk: !!(a[0].ok || a[1].ok)
+      };
+    });
+  }
+
   /* ---------- 把取证结果翻译成人话：标签 + 自研分数（每一分都能追溯） ---------- */
 
   /* row = 离线分级结果；en = lookup() 的返回值（可空） */
@@ -375,6 +399,7 @@
     parseRipestat: parseRipestat,
     parseShodan: parseShodan,
     lookup: lookup,
+    lookupRowEvidence: lookupRowEvidence,
     verdict: verdict,
     errText: errText, failText: failText,
     dcRe: DC_RX, mobRe: MOB_RX, ispRe: ISP_RX,

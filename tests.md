@@ -6,17 +6,23 @@
 > 手写的清单一定会和测试漂移（加了断言忘了补文档，清单就开始骗人）。
 > 改了测试就重新生成一次。
 
-**当前状态**：8 个测试文件 · **323 条断言** · 全部通过 ✅
+**当前状态**：14 个测试文件 · **477 条断言** · 全部通过 ✅
 
 ## 按文件
 
-- **页面接线** —— 22 条 · `test-page.mjs`
+- **页面接线与 PWA** —— 49 条 · `test-page.mjs`
 - **粘贴清单的清洗与识别** —— 116 条 · `test-inline.mjs`
 - **判定与各出口一致** —— 52 条 · `test-consistency.mjs`
 - **IP 归属表（全球 ASN 段表）** —— 33 条 · `test-global.mjs`
 - **城市数据包** —— 12 条 · `test-city.mjs`
+- **ASN 输入与聚合** —— 20 条 · `test-asn.mjs`
+- **云厂商段包** —— 21 条 · `test-cloud.mjs`
+- **风险名单包** —— 20 条 · `test-blocklists.mjs`
+- **二源 ASN 分歧** —— 12 条 · `test-asndiff.mjs`
 - **联网核验（抽样改判）** —— 28 条 · `test-online.mjs`
 - **实测取证（单 IP 报告）** —— 49 条 · `test-enrich.mjs`
+- **导出、分享与对比** —— 28 条 · `test-export.mjs`
+- **筛选、排序与置信度** —— 26 条 · `test-ui-core.mjs`
 - **中英词条** —— 11 条 · `test-i18n.mjs`
 - **人工验证**（自检覆盖不到的：版面、下载、隐私）
 
@@ -35,25 +41,31 @@
 | 各出口一致（表格 / CSV / 详情 / 构成条） | 21 | `test-consistency.mjs` |
 | IP 归属表与标定库 | 14 | `test-global.mjs` |
 | 城市数据 | 7 | `test-city.mjs` |
+| ASN 输入与聚合 | 15 | `test-asn.mjs` |
+| 云厂商段 | 13 | `test-cloud.mjs` |
+| 风险名单 | 13 | `test-blocklists.mjs` |
+| 二源 ASN 分歧 | 6 | `test-asndiff.mjs` |
 | 联网核验 | 22 | `test-online.mjs` |
 | 实测取证 | 32 | `test-enrich.mjs` |
+| 导出与分享 | 23 | `test-export.mjs` |
+| 筛选、排序与置信度 | 16 | `test-ui-core.mjs` |
 | 中英词条 | 10 | `test-i18n.mjs` |
-| 页面接线与构建戳 | 13 | `test-page.mjs` |
+| 页面接线与 PWA | 27 | `test-page.mjs` |
 
 ---
 
-## 页面接线
+## 页面接线与 PWA
 
-index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资源都在、所有脚本带同一个构建戳、九个 js 都能解析。
+index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资源都在、所有脚本带同一个构建戳、manifest 与 sw.js 的构建戳一致、预缓存路径存在、10 列表头与失败行 colspan 对齐。
 
-`test-page.mjs` · 22 条 · 单独跑：`node test/test-page.mjs`
+`test-page.mjs` · 49 条 · 单独跑：`node test/test-page.mjs`
 
 - [x] app.js 引用的 id 都有对应节点（静态或动态插入）
 - [x] index.html 引用的本地资源都存在
-- [x] meta[name=build] 存在 — `20261015q`
-- [x] 所有本地脚本都带同一个构建戳（11 个） — `20261015q`
-- [x] index.html 引用了数据包 — `data/segments-data.js, assets/i18n.js, assets/core.js, assets/city.js, assets/online.js, assets/enrich.js, assets/report.js, assets/sources.js, assets/app.js`
-- [x] index.html 引用了城市包与IP 归属表 — `data/segments-data.js, assets/i18n.js, assets/core.js, assets/city.js, assets/online.js, assets/enrich.js, assets/report.js, assets/sources.js, assets/app.js`
+- [x] meta[name=build] 存在 — `20261019d`
+- [x] 所有本地脚本都带同一个构建戳（16 个） — `20261019d`
+- [x] index.html 引用了数据包 — `data/segments-data.js, assets/i18n.js, assets/core.js, assets/city.js, assets/online.js, assets/enrich.js, assets/report.js, assets/sources.js, assets/cloud.js, assets/blocklists.js, assets/asn-diff.js, assets/history.js, assets/share.js, assets/app.js`
+- [x] index.html 引用了城市包与IP 归属表 — `data/segments-data.js, assets/i18n.js, assets/core.js, assets/city.js, assets/online.js, assets/enrich.js, assets/report.js, assets/sources.js, assets/cloud.js, assets/blocklists.js, assets/asn-diff.js, assets/history.js, assets/share.js, assets/app.js`
 - [x] 存在 data/global-pack.bin
 - [x] 存在 data/global-asn.js
 - [x] 存在 data/asn-calib.js
@@ -69,7 +81,34 @@ index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资�
 - [x] assets/enrich.js 语法可解析
 - [x] assets/report.js 语法可解析
 - [x] assets/sources.js 语法可解析
+- [x] assets/cloud.js 语法可解析
+- [x] assets/blocklists.js 语法可解析
+- [x] assets/asn-diff.js 语法可解析
+- [x] assets/history.js 语法可解析
+- [x] assets/share.js 语法可解析
 - [x] assets/app.js 语法可解析
+- [x] 存在 data/cloud-pack.bin
+- [x] 存在 data/cloud-meta.js
+- [x] 存在 data/blocklists.bin
+- [x] 存在 data/blocklists.js
+- [x] 存在 data/asn-disagree.bin
+- [x] 存在 data/asn-disagree.js
+- [x] 存在 manifest.webmanifest
+- [x] 存在 sw.js
+- [x] 存在 assets/icon-192.png
+- [x] 存在 assets/icon-512.png
+- [x] index.html 接入了 assets/cloud.js
+- [x] index.html 接入了 assets/blocklists.js
+- [x] index.html 接入了 assets/asn-diff.js
+- [x] index.html 接入了 assets/history.js
+- [x] index.html 接入了 assets/share.js
+- [x] manifest 有 name / start_url / icons
+- [x] manifest 图标都存在 — `assets/icon-192.png, assets/icon-512.png`
+- [x] sw.js 的 BUILD 与 index.html 一致 — `20261019d vs 20261019d`
+- [x] sw.js 不拦截跨域请求
+- [x] sw.js 预缓存路径都存在
+- [x] 表头列数 == 10（7 个可排序 + 3 个固定） — `sh=7 th=3`
+- [x] 失败行 colspan = 6（10 - 3 固定单元格 - 1 箭头）
 
 ## 粘贴清单的清洗与识别
 
@@ -171,7 +210,7 @@ index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资�
 - [x] 每行都有得分 — `91,91,91`
 - [x] 行身份保持打码模式 — `50.*.54.100`
 - [x] core 不再导出 takeIp / takeWhy — `undefined / undefined`
-- [x] 排名表 CSV 没有「建议拿」这一列 — `排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前3)`
+- [x] 排名表 CSV 没有「建议拿」这一列 — `排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前3),名单/云段/二源标记`
 - [x] 排名表 CSV 表头首列是“排名” — `排名,IP模式,主要城市,主要国家,级别,级别说`
 - [x] 排名表一行一个模式 — `实得 16 行 / 期望 16 行`
 - [x] 排名表保留带 * 的模式 — `1,50.*.54.100,Northlake,,A,住宅为主,实测记录,91,`
@@ -190,7 +229,7 @@ index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资�
 - [x] 候选项不再带 metro 字段 — `{"ip":"198.0.42.81","network":"198.0.42.0/24","city":"Portland","isp":"Comcast Cable Communications"}`
 - [x] host24 不再带 metro 字段 — `{}`
 - [x] 候选排序只剩「城市 → IP」 — `198.166.42.81 198.53.42.81 198.165.42.81`
-- [x] 排名表 CSV 没有都会区列 — `排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前3)`
+- [x] 排名表 CSV 没有都会区列 — `排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前3),名单/云段/二源标记`
 - [x] 枚举明细 CSV 没有都会区列 — `排名,IP模式,枚举IP,城市,运营商,类别`
 - [x] CSV 里不再出现 ★ — `★ 只跟着标记功能存在`
 
@@ -215,8 +254,8 @@ index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资�
 - [x] 单个 IP 的行住宅那格不再出现 ≈0/1 这类形状 — `单个 IP · 商业中转/机构 | 单个 IP · 机房/云`
 - [x] 行级得分都是整数 — `91,20,0,0`
 - [x] 行级得分与 rowScore 一致 — `rankRows 之后 score 必须就是 rowScore`
-- [x] CSV 有 住宅 / 得分 / 主要城市 / 主要国家 列 — `排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前3)`
-- [x] 列名写着「主要城市 / 主要国家」 — `排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前3)`
+- [x] CSV 有 住宅 / 得分 / 主要城市 / 主要国家 列 — `排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前3),名单/云段/二源标记`
+- [x] 列名写着「主要城市 / 主要国家」 — `排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前3),名单/云段/二源标记`
 - [x] CSV 住宅列 == Core.homeTxt(50.*.54.100) — `192/256 · 75%`
 - [x] CSV 得分列（50.*.54.100）== 行级得分 — `CSV="91" 期望="91"`
 - [x] CSV 住宅列 == Core.homeTxt(198.3.243.16) — `单个 IP · 商业中转/机构`
@@ -259,8 +298,8 @@ index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资�
 
 `test-global.mjs` · 33 条 · 单独跑：`node test/test-global.mjs`
 
-- [x] 段表读取 — `539322 段 / 79188 个 ASN`
-- [x] ASN 元数据读取 — `79188 个 ASN`
+- [x] 段表读取 — `539238 段 / 79238 个 ASN`
+- [x] ASN 元数据读取 — `79238 个 ASN`
 - [x] 标定表读取 — `291 个 ASN 有住宅占比`
 - [x] World.ready()
 - [x] 段起点严格递增（二分查找前提） — `0 处异常`
@@ -311,6 +350,107 @@ index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资�
 - [x] 枚举结果带城市覆盖数 — `256/256 有城市`
 - [x] 枚举结果按城市聚合出 top（详情里的城市标签用它） — `New York×24 · Richardson×12 · Ashburn×11`
 - [x] 枚举出的 IP 保持打码位替换后的完整形式 — `198.0.205.197,198.1.205.197`
+
+## ASN 输入与聚合
+
+AS 前缀的大小写 / 去重 / 混合行 / 上限 50；区间回查、CIDR 展开、均匀取样、聚合行字段、未知 ASN、展开上限。
+
+`test-asn.mjs` · 20 条 · 单独跑：`node test/test-asn.mjs`
+
+- [x] 单个 ASN 被识别成一条 ASN token — `[{"asn":4766,"raw":"AS4766","sourceLine":1,"rawLine":"AS4766"}]`
+- [x] ASN-only 行不算未识别
+- [x] 小写 as 也认
+- [x] 同一个 ASN 只收一次
+- [x] 一行里 ASN 和 IP 都收下 — `1/1`
+- [x] 「AS Number 4766」不误认成 ASN
+- [x] ASN 输入上限 50，超出部分明确写进未识别 — `50/1`
+- [x] AS4766 概览：名称 / 国家 / 段数 / CIDR / /24 — `{"name":"KIXS-AS-KR Korea Telecom","cc":"KR","segments":1836,"ranges":1527,"cidrs":5346,"blocks24":181191}`
+- [x] rangesOf 返回合并后的区间 — `1527`
+- [x] 每个区间起点都能反查回 AS4766
+- [x] cidrsOf 产出 CIDR 且格式正确 — `5346`
+- [x] blocks24Of 均匀取 8 个 /24 — `{"shown":8,"total":181191}`
+- [x] 展开项都是 a.b.c.* 形式 — `1.96.0.*, 39.25.48.*, 112.178.226.*, 119.217.229.*, 125.158.30.*, 183.107.229.*, 218.149.135.*, 223.255.199.*`
+- [x] analyzeAsn 产出聚合行 — `{"ok":true,"reason":""}`
+- [x] 聚合行来源是 IP 归属表（估算）
+- [x] 聚合行带 ASN 概览
+- [x] 聚合行国家取 ASN 注册国 — `KR`
+- [x] 没有标定样本 → 未评级；有标定 → 有级别 — `calibrated=false tier= ungraded=true`
+- [x] 不存在的 ASN 返回 ok=false + 原因 — `ASN 段表里没查到 AS4294967290`
+- [x] expandAsn 遵守 cap — `1.96.0.*, 61.84.105.*, 121.171.217.*, 203.246.31.*, 223.255.199.*`
+
+## 云厂商段包
+
+CLOUDPK1 格式与有序性、整 /24 覆盖才改判 D、部分覆盖只标注、跨 256 个 /24 的 50% 阈值、NOTICE 署名。
+
+`test-cloud.mjs` · 21 条 · 单独跑：`node test/test-cloud.mjs`
+
+- [x] CLOUDPK1 魔数
+- [x] 区间数 > 0 — `1562`
+- [x] 区间升序、互不重叠
+- [x] fullBits 是 providerBits 的子集
+- [x] 没有未知厂商位
+- [x] CloudPacks 就绪
+- [x] meta 记录四家厂商 — `aws,gcp,cloudflare,azure`
+- [x] 找到一个整 /24 覆盖的段 — `1.178.1.1`
+- [x] 找到一个只部分覆盖的段 — `3.4.12.1`
+- [x] 整 /24 命中 → 改判 D — `D/云厂商段表`
+- [x] 云段改判后不再是估算
+- [x] 云段改判清掉住宅计数
+- [x] 部分覆盖只标注、不改判 — `实测记录/false`
+- [x] 部分覆盖的标记带 ?（CSV 用） — `cloud:aws?`
+- [x] 50% 整/24 覆盖 → 改判 D
+- [x] 49% 整/24 覆盖 → 只标注 — `50%`
+- [x] overlapRanges 能统计 ASN 区间覆盖 — `{"blocks24":1,"any":1,"full":1,"sampled":false,"byProvider":{"aws":{"any":1,"full":1}}}`
+- [x] NOTICE 记录了 AWS 段表来源
+- [x] NOTICE 记录了 Google Cloud 段表来源
+- [x] NOTICE 记录了 Cloudflare 段表来源
+- [x] NOTICE 记录了 Azure 段表来源
+
+## 风险名单包
+
+四个来源的解析器、IPBLK001 格式、命中只标注（不改级别 / 得分 / 计数）、第 4 段打码按 254 个主机统计。
+
+`test-blocklists.mjs` · 20 条 · 单独跑：`node test/test-blocklists.mjs`
+
+- [x] DROP：CIDR + 行尾注释 — `[{"start":17436672,"end":17440767},{"start":33686016,"end":33686271}]`
+- [x] IPsum：只收 >=3 的条目 — `2`
+- [x] 纯 IP 列表：一行一个
+- [x] 相邻段合并、bit 按位或 — `[{"start":10,"end":30,"bits":3},{"start":100,"end":100,"bits":4}]`
+- [x] IPBLK001 魔数
+- [x] 段数 > 0 — `21311`
+- [x] 段升序、互不重叠
+- [x] bits 只用四个来源位
+- [x] IPBlocklists 就绪
+- [x] meta 记录四个来源 — `drop,ipsum,tor,blocklistde`
+- [x] 包内区间起点能查回命中 — `{"bits":1,"ids":["drop"]}`
+- [x] 命中带来源名 — `drop`
+- [x] 命中后挂上 blocklist 标记 — `["drop"]`
+- [x] 标注不改级别 / 来源 / 得分 / 计数
+- [x] CSV 标记串包含 bl: — `bl:drop`
+- [x] 第 4 段打码按 254 个主机统计 — `254`
+- [x] NOTICE 记录了 Spamhaus
+- [x] NOTICE 记录了 IPsum
+- [x] NOTICE 记录了 Tor
+- [x] NOTICE 记录了 blocklist.de
+
+## 二源 ASN 分歧
+
+ASNDIF01 格式、包内回查、区间交集统计、标注不改级别 / 来源 / 得分、DB-IP 许可与对比月份。
+
+`test-asndiff.mjs` · 12 条 · 单独跑：`node test/test-asndiff.mjs`
+
+- [x] ASNDIF01 魔数
+- [x] 区间数 > 0 — `8296`
+- [x] 区间升序、互不重叠
+- [x] otherAsn 都是正整数
+- [x] IPAsnDiff 就绪
+- [x] meta 记录了 CC BY 4.0 许可 — `DB-IP ASN Lite — CC BY 4.0；IP Geolocation by DB-IP (https://db-ip.com)`
+- [x] meta 记录了对比月份 — `2026-10`
+- [x] 包内起点能查回 DB-IP ASN — `{"otherAsn":138421}`
+- [x] overlapRanges 能统计分歧 /24 — `{"blocks24":1,"byAsn":{"138421":{"asn":138421,"blocks24":1}},"sampled":false}`
+- [x] 命中后挂上 asnDiff 标记 — `138421`
+- [x] 二源分歧不改级别 / 来源 / 得分
+- [x] CSV 标记串包含 diff:AS — `diff:AS138421`
 
 ## 联网核验（抽样改判）
 
@@ -403,6 +543,74 @@ RDAP / DoH PTR / Team Cymru / RIPEstat / InternetDB 五个来源的解析、前�
 - [x] DoH Status=3（NXDOMAIN）→ 确实没有 PTR 记录
 - [x] DoH Status=0 且没有 Answer → 同样是没有 PTR
 
+## 导出、分享与对比
+
+JSON schema / 来源 / 无 NaN、SVG 自包含与 XML 转义、分享链接长度守卫、历史快照上限与 diff 状态。
+
+`test-export.mjs` · 28 条 · 单独跑：`node test/test-export.mjs`
+
+- [x] JSON schema 版本
+- [x] JSON 带构建戳与来源
+- [x] JSON 行数与输入一致
+- [x] JSON 分数是数字 — `100`
+- [x] JSON 带标记字段
+- [x] JSON 没有 NaN
+- [x] CSV 标记串含三层 — `cloud:aws;bl:tor;diff:AS123`
+- [x] SVG 以 <svg 开头
+- [x] SVG 含标题
+- [x] SVG 自包含：无外链 / 图片 / CSS 变量
+- [x] SVG 使用 hex 色板
+- [x] SVG 转义 XML 特殊字符
+- [x] shareUrl 生成 #q=
+- [x] decodeShare 还原清单
+- [x] decodeShare 支持无 # 和编码
+- [x] decodeShare 对坏输入返回空串
+- [x] 超长清单拒绝生成链接
+- [x] 快照只存对比需要的字段
+- [x] 同一行没变 → same
+- [x] 得分变高 → score-up
+- [x] 得分变低 → score-down
+- [x] 级别变差 → worsened
+- [x] 新行 → new
+- [x] 快照最多 1000 行并标 truncated
+- [x] push 返回快照
+- [x] list 能读回
+- [x] get 能按 id 取
+- [x] clear 清空
+
+## 筛选、排序与置信度
+
+filterRows 的单条件与组合、sortRows 的缺值后排与稳定排序、confidenceRank 的核验优先级。
+
+`test-ui-core.mjs` · 26 条 · 单独跑：`node test/test-ui-core.mjs`
+
+- [x] 空筛选返回全部
+- [x] A+B 只留已评级的 A/B — `1.1.1.1,2.2.2.2,5.5.5.5,6.6.6.6,7.7.7.7`
+- [x] 未评级筛选收未评级与失败行 — `3.3.3.3,4.4.4.4`
+- [x] 单一级别筛选
+- [x] 国家筛选忽略大小写 — `1.1.1.1,5.5.5.5`
+- [x] 城市筛选
+- [x] 标记筛选：云段 / 名单 / 二源 / 任意
+- [x] 组合筛选同时生效 — `5.5.5.5`
+- [x] 筛选不改原数组
+- [x] 默认按排名升序
+- [x] 排名可倒序
+- [x] 得分倒序：缺分（未评级/失败）永远排最后 — `100,100,100,100,58,,`
+- [x] 得分倒序：有分部分确实降序 — `100,100,100,100,58,,`
+- [x] 得分缺失行保持原相对顺序
+- [x] 国家升序，缺国家排最后 — `JP,US,US,-,-,-,-`
+- [x] 缺值排序与方向无关（倒序也在最后）
+- [x] 得分相同按原顺序（稳定）
+- [x] 字符串列可倒序
+- [x] 排序不改原数组
+- [x] 失败行不参与核验排序
+- [x] 云段确定性改判最后考虑
+- [x] 未评级 / 只有先验 → 0
+- [x] 打码截断 → 1
+- [x] IP 归属表估算 → 2
+- [x] 实测记录 → 3
+- [x] 空行排在最后
+
 ## 中英词条
 
 HTML 正文、占位符、JS 里拼的句子都有英文；英文列不留中文；没有死条目（重复正则）。
@@ -410,11 +618,11 @@ HTML 正文、占位符、JS 里拼的句子都有英文；英文列不留中文
 `test-i18n.mjs` · 11 条 · 单独跑：`node test/test-i18n.mjs`
 
 - [x] index.html 的 title / aria-label 全部有英文（3 条）
-- [x] index.html 的正文全部有英文（15 段）
+- [x] index.html 的正文全部有英文（24 段）
 - [x] 占位符每种语言都有一份 — `zh,en`
 - [x] 占位符 en 全是目标语言
 - [x] 占位符与 DOM 里那份一致（两处都改了才不算漏）
-- [x] 关键句子全部有英文（23 句）
+- [x] 关键句子全部有英文（50 句）
 - [x] 词条表没有重复的正则（重复的短键会永远轮不到，是死条目）
 - [x] 每条词条都有英文列
 - [x] 英文列里没有残留中文
@@ -443,7 +651,19 @@ python -m http.server 8080      # 打开 http://localhost:8080/
 - [ ] 详情抽屉：定义格标签一列对齐，构成条宽度加起来 100%
 - [ ] 实测取证面板：五个来源合并成两行，一屏装得下
 - [ ] 不可路由的行：表格里写「不可路由」，不摆成失败的样子（不是「—」）
+- [ ] 标记列最多两个 badge + `+N`，抽屉里能看到完整名单 / 厂商 / 两源 ASN
+- [ ] 筛选行：国家 / 标记 / 城市 / 排序 / 对比下拉可用，没有结果时表格有空态提示
+- [ ] 列头排序：点一次升序、再点降序，缺值（未评级 / 失败）始终排最后
+- [ ] 对比快照：级别变好 ↑ 绿、变差 ↓ 红、仅得分变 ~ 灰；「新」行有标记
 - [ ] 中英切换：表格、详情、报告、提示、占位符全部跟着换，英文界面不露中文
+
+### 证据层与 ASN
+
+- [ ] `AS4766` → 一条聚合行，显示名称 / 类型 / 国家 / 段数 / CIDR 数 / `/24` 数；展开 ≤64 行，第二次展开计入 128/会话上限
+- [ ] 云厂商整 `/24` IP → D + `云厂商段表` + 厂商 badge；同一 /24 只部分覆盖的 IP → 级别不变、只有 badge
+- [ ] 名单命中的住宅行 → badge 出现，级别 / 得分 / 构成条都不变
+- [ ] 两源不一致的行 → 两个 ASN + 对比月份，级别与得分不变
+- [ ] 「联网核验」先做未评级 / 估算行；抽屉与报告显示 RDAP / PTR 或「未获取」
 
 ### 导出与复制（自检只验核心函数，不验浏览器下载）
 
@@ -451,6 +671,17 @@ python -m http.server 8080      # 打开 http://localhost:8080/
 - [ ] 「导出枚举」列数对齐，行数多于排名表
 - [ ] 「复制排名」粘到记事本里是制表符分隔、能对齐
 - [ ] 「复制本行候选」粘出来的行数与提示里的数字一致
+- [ ] 「导出 JSON」无 BOM、`JSON.parse` 能过、`rows` 与当前可见行一致、含各数据包日期
+- [ ] 「分享卡片」的 SVG 用浏览器独立打开无网络请求、最多 8 行、中文不溢出
+- [ ] 「复制链接」在新窗口能恢复清单；超长清单被拒绝并提示导出 JSON
+- [ ] 刷新页面后对比下拉里仍有上次快照；清除浏览器数据后消失
+
+### PWA 与离线
+
+- [ ] Application 面板：manifest 名称 / 图标正常，Service Worker 状态为 activated
+- [ ] 首访后切 Offline 刷新：页面外壳仍能打开（数据包按需读取，未缓存的部分显示「未加载」而不是空结果）
+- [ ] DevTools Network：页面加载只请求同源 `data/*`，没有新增跨域请求
+- [ ] 改了数据包但不换构建戳时，元数据仍会重新校验（network-first），不会卡在旧版本
 
 ### 数据与网络
 

@@ -5,13 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- build 戳：静态托管的 CDN 会缓存 js/数据包，改完资源就把它改一下，
      脚本 src 与 ?v= 都指向它，避免「新 HTML + 旧 JS」这种半新半旧的状态 -->
-<meta name="build" content="20261018a">
+<meta name="build" content="20261019d">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#14161a">
 <title>iPurity · 批量甄别住宅 IP</title>
 <meta name="description" content="iPurity：把一批 IP 段（含 130.*.253.66 这种带 * 的写法）粘进网页，就能看出哪些属于住宅 IP。订阅 AI 服务、开跨境电商店铺、运营社媒多账号都用得上，全部在浏览器里算，不装软件、不上传。">
 <!-- 图标：SVG 优先（任意尺寸都清晰），.ico / PNG 兜底给不认 SVG 图标的浏览器与 iOS 主屏 -->
-<link rel="icon" href="favicon.ico?v=20261018a" sizes="32x32 48x48">
-<link rel="icon" type="image/svg+xml" href="assets/icon.svg?v=20261018a" sizes="any">
-<link rel="apple-touch-icon" href="assets/icon-180.png?v=20261018a">
+<link rel="icon" href="favicon.ico?v=20261019d" sizes="32x32 48x48">
+<link rel="icon" type="image/svg+xml" href="assets/icon.svg?v=20261019d" sizes="any">
+<link rel="apple-touch-icon" href="assets/icon-180.png?v=20261019d">
 <style>
   :root{
     --paper:#f5f2ec; --panel:#fffdf8; --ink:#14161a; --muted:#6a7080;
@@ -127,6 +129,15 @@
   button.chip.on .k,button.chip.on .v{color:var(--onink)}
   button.chip.on .k{opacity:.72}
   .toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;margin:8px 0 0;flex:none}
+  /* 第二排筛选：国家 / 标记 / 城市 / 排序 / 对比。窄屏自动折行，不撑破一屏 */
+  .filters{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;margin:8px 0 0;font-size:var(--fs-s);color:var(--muted);flex:none}
+  .filters[hidden]{display:none}
+  .filters [hidden]{display:none}
+  .filters label{display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+  .filters select,.filters input{font:var(--fs-s)/1.2 var(--mono);border:1px solid var(--rule);border-radius:var(--r);
+    background:var(--field);color:var(--ink);padding:4px 6px;max-width:190px}
+  .filters select:focus,.filters input:focus{outline:2px solid var(--a-35);outline-offset:1px}
+  .filters #fFlagPreview img{vertical-align:-2px}
   .seg{display:inline-flex;border:1px solid var(--ink);border-radius:var(--r);overflow:hidden}
   .seg button{border:0;border-right:1px solid var(--ink);box-shadow:none;background:var(--field);text-transform:none;letter-spacing:0}
   .seg button:last-child{border-right:0}
@@ -135,7 +146,10 @@
   #tableHost{flex:1;min-height:0;overflow:auto;margin-top:8px;border:1px solid var(--rule);border-radius:var(--r);background:var(--field)}
   table{width:100%;min-width:900px;border-collapse:collapse;font-size:var(--fs-m)}
   thead th{position:sticky;top:0;background:var(--panel);border-bottom:1px solid var(--ink);text-align:left;padding:8px 12px;font:600 var(--fs-xs)/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--muted);white-space:nowrap;z-index:1}
+  thead th.sortable{cursor:pointer;user-select:none}
+  thead th.sortable:hover{color:var(--ink);background:var(--ink-03)}
   tbody td{border-bottom:1px solid var(--rule-soft);padding:8px 12px;vertical-align:middle}
+  tbody td.src{white-space:nowrap}
   tbody tr{cursor:pointer}
   tbody tr:hover{background:var(--a-05)}
   tbody tr.active{background:var(--a-10)}
@@ -160,11 +174,22 @@
      级别、得分、住宅占比、报告里的每条证据都从这里取色，别再造别的写法。 */
   .t-g{color:var(--a)} .t-o{color:var(--b)} .t-b{color:var(--c)} .t-d{color:var(--d)} .t-x{color:var(--muted)}
   .share{font:600 var(--fs-s)/1 var(--mono)}
+  /* 对比历史：级别变好 ↑ 绿 · 变差 ↓ 红 · 只有得分变 ~ 灰 · 新行 + */
+  .cmp{display:inline-block;margin-left:4px;font-weight:700}
+  .cmp.g{color:var(--a)} .cmp.d{color:var(--d)} .cmp.o{color:var(--b)} .cmp.x{color:var(--muted)}
   /* 表格里的「构成 · 住宅」：密度条和数字必须同一行 */
   .tcell{display:flex;align-items:center;gap:8px;white-space:nowrap}
   .tcell .stack{flex:0 0 96px;min-width:0}
   .stack{display:flex;height:9px;border-radius:2px;overflow:hidden;background:var(--rule-soft);min-width:96px}
   .stack i{display:block;height:100%}
+  /* 标记列：最多两个 badge，多了折成 +N；颜色沿用全站语义色 */
+  .marks{display:flex;align-items:center;gap:3px;white-space:nowrap}
+  .mk{display:inline-block;padding:1px 5px;border:1px solid var(--rule);border-radius:2px;
+    font:600 var(--fs-xs)/1.35 var(--mono);color:var(--muted);background:var(--field)}
+  .mk.cloud{border-color:var(--d-line);color:var(--d);background:var(--d-tint)}
+  .mk.risk{border-color:var(--b-line);color:var(--b);background:var(--b-tint)}
+  .mk.diff{border-color:var(--c-line);color:var(--c);background:var(--c-tint)}
+  .mk.ev{border-color:var(--a-line);color:var(--a);background:var(--a-tint)}
   /* 构成条（详情里的放大版）：和表格那一列同一套颜色、同一套宽度算法，段上直接写名字/个数/占比 */
   .comp{margin:0 0 12px}
   .cbar{display:flex;height:26px;border:1px solid var(--rule);border-radius:var(--r);overflow:hidden;background:var(--rule-soft)}
@@ -362,7 +387,19 @@ Markdown 的加粗也认（**198.*.42.81**，或者加粗紧贴着运营商名�
             <button id="export" disabled>导出排名</button>
             <button class="ghost" id="exportCand" disabled>导出枚举</button>
             <button class="ghost" id="copyAll" disabled>复制排名</button>
+            <button class="ghost" id="exportJson" disabled>导出 JSON</button>
+            <button class="ghost" id="shareCard" disabled>分享卡片</button>
+            <button class="ghost" id="shareLink" disabled>复制链接</button>
           </div>
+        </div>
+        <div class="filters" id="filters" hidden>
+          <label>国家 <select id="fCountry"></select></label>
+          <span id="fFlagPreview"></span>
+          <label>标记 <select id="fFlag"></select></label>
+          <label>城市 <input id="fCity" list="cityList" placeholder="筛选城市"><datalist id="cityList"></datalist></label>
+          <label>排序 <select id="fSort"></select></label>
+          <label id="snapWrap" hidden>对比 <select id="snapSel"></select></label>
+          <button class="sm" id="fReset">重置筛选</button>
         </div>
         <p class="hint mini" id="cityHint" hidden></p>
         <div id="tableHost"><div class="empty">粘贴清单后点「判定」，这里会按级别列出结果。</div></div>
@@ -415,14 +452,19 @@ Markdown 的加粗也认（**198.*.42.81**，或者加粗紧贴着运营商名�
 </div>
 <div class="toast" id="toast"></div>
 
-<script src="data/segments-data.js?v=20261018a"></script>
-<script src="assets/i18n.js?v=20261018a"></script>
-<script src="assets/core.js?v=20261018a"></script>
-<script src="assets/city.js?v=20261018a"></script>
-<script src="assets/online.js?v=20261018a"></script>
-<script src="assets/enrich.js?v=20261018a"></script>
-<script src="assets/report.js?v=20261018a"></script>
-<script src="assets/sources.js?v=20261018a"></script>
-<script src="assets/app.js?v=20261018a"></script>
+<script src="data/segments-data.js?v=20261019d"></script>
+<script src="assets/i18n.js?v=20261019d"></script>
+<script src="assets/core.js?v=20261019d"></script>
+<script src="assets/city.js?v=20261019d"></script>
+<script src="assets/online.js?v=20261019d"></script>
+<script src="assets/enrich.js?v=20261019d"></script>
+<script src="assets/report.js?v=20261019d"></script>
+<script src="assets/sources.js?v=20261019d"></script>
+<script src="assets/cloud.js?v=20261019d"></script>
+<script src="assets/blocklists.js?v=20261019d"></script>
+<script src="assets/asn-diff.js?v=20261019d"></script>
+<script src="assets/history.js?v=20261019d"></script>
+<script src="assets/share.js?v=20261019d"></script>
+<script src="assets/app.js?v=20261019d"></script>
 </body>
 </html>

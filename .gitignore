@@ -20,6 +20,12 @@ build/city/
 # 黑名单原始列表（Spamhaus DROP / IPsum / Tor 出口 …，用 tools/fetch-blocklists.mjs 现拉）
 build/blocklists/
 
+# 云厂商公开段表（AWS/GCP/Cloudflare/Azure，用 tools/fetch-cloud-ranges.mjs 现拉）
+build/cloud/
+
+# DB-IP ASN Lite 原始 CSV（用 tools/fetch-asn-dbip.mjs 现拉）
+build/dbip-asn/
+
 # 部署缓存
 .edgeone/
 .wrangler/

@@ -38,6 +38,9 @@
   var HOST_LO = 1, HOST_HI = 254;
   var TOKEN = /^(\d{1,3}|\*)(?:\.(\d{1,3}|\*)){3}$/;
   var CIDR = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})\/(\d{1,2})$/;
+  /* AS4766 / as4766：只认独立的 AS + 数字 token，不认「AS Number 4766」 */
+  var ASN_RX = /^AS(\d{1,10})$/i;
+  var ASN_MAX_INPUT = 50;
   /* 清单里 IP 常被 Markdown 加粗：**198.*.42.81**、*198.*.42.81*，
      或者加粗紧贴着后面的运营商名（**111.169.14.1**BIGLOBE）。这两种只在
      token **以 * 开头**时才去认 —— 不然普通文字里的数字会被误抓成 IP。 */
@@ -81,6 +84,7 @@
   function parseWithReport(text) {
     var lines = normalize(text).split(/\r?\n/);
     var items = [], unmatched = [], seen = {}, duplicates = 0, blank = 0;
+    var asns = [], seenAsn = {}, asnDuplicates = 0;
 
     for (var i = 0; i < lines.length; i++) {
       var t = lines[i].trim();
@@ -94,7 +98,8 @@
       // 整行既没有点也没有星号时，只可能是“空格分隔的四段”，否则按界面噪声丢弃
       // （如“已选 0 条数据：”“1 提取”“共 200 条”）
       if (!/[.*]/.test(t) &&
-          !/(^|\s)(\d{1,3}|\*)\s+(\*|\d{1,3})\s+(\d{1,3}|\*)\s+(\d{1,3}|\*)(\s|$)/.test(t)) { continue; }
+          !/(^|\s)(\d{1,3}|\*)\s+(\*|\d{1,3})\s+(\d{1,3}|\*)\s+(\d{1,3}|\*)(\s|$)/.test(t) &&
+          !/(^|\s)AS\d{1,10}(\s|$)/i.test(t)) { continue; }
 
       /* 一行一个 IP 是常态，但一行里摆好几个也常见（「10.0.0.1 / 127.0.0.1」这种）。
          token 逐个认，**收几个出几行** —— 只认第一个会让后面那些无声无息地消失。
@@ -102,10 +107,12 @@
          CIDR 展开就没了。分隔用的斜杠在 normalize 里已经是孤立的 `/`（单独一个 token，
          认不出来自然跳过），CIDR 的斜杠粘在地址上，原样留给 CIDR 规则。 */
       var toks = t.split(/[\s,\t|;]+/).filter(Boolean);
-      var foundList = [], sawCidr = false;
+      var foundList = [], foundAsns = [], sawCidr = false;
 
       for (var j = 0; j < toks.length; j++) {
         var tk = toks[j].replace(/^[`'"]+|[`'"]+$/g, "").replace(/:\d{1,5}$/, "");   // 去引号/端口
+        var am = tk.match(ASN_RX);
+        if (am) { foundAsns.push(am[1]); continue; }
         if (CIDR.test(tk)) { foundList.push(tk); sawCidr = true; continue; }
         if (TOKEN.test(tk)) { foundList.push(tk); continue; }
         /* 换一种写法再认一遍：打码位写成 ? 或 x（198.?.42.81），
@@ -122,11 +129,11 @@
 
       /* 退路：空格分隔的四段（198 3 181 59）—— 整行一个 token 都没认出来时才用，
          否则「10.0.0.1 127.0.0.1」会被它拼成一个假地址。 */
-      if (!foundList.length && !sawCidr) {
+      if (!foundList.length && !sawCidr && !foundAsns.length) {
         var m2 = t.match(/(^|\s)(\d{1,3}|\*)\s+(\*|\d{1,3})\s+(\d{1,3}|\*)\s+(\d{1,3}|\*)(\s|$)/);
         if (m2) { foundList.push([m2[2], m2[3], m2[4], m2[5]].join(".")); }
       }
-      if (!foundList.length) { unmatched.push({ line: i + 1, text: t }); continue; }
+      if (!foundList.length && !foundAsns.length) { unmatched.push({ line: i + 1, text: t }); continue; }
 
       /* 每个认出来的写法展开成 /24 模式，同一个写法在一行里出现多次只算一条 */
       var lineCidrBad = false;
@@ -157,9 +164,22 @@
           items.push({ index: items.length + 1, sourceLine: i + 1, raw: t, pattern: patterns[p] });
         }
       }
+      /* ASN token：一个 AS 只收一次。超过上限的 token 明确写进未识别，不静默丢掉。 */
+      for (var a = 0; a < foundAsns.length; a++) {
+        var asnNo = Number(foundAsns[a]);
+        if (!(asnNo > 0)) { continue; }
+        if (seenAsn[asnNo]) { asnDuplicates++; continue; }
+        if (asns.length >= ASN_MAX_INPUT) {
+          unmatched.push({ line: i + 1, text: t + "  (ASN 超过 " + ASN_MAX_INPUT + " 个，未展开)" });
+          break;
+        }
+        seenAsn[asnNo] = 1;
+        asns.push({ asn: asnNo, raw: "AS" + asnNo, sourceLine: i + 1, rawLine: t });
+      }
       if (lineCidrBad) { unmatched.push({ line: i + 1, text: t + "  (小于 /16 暂不支持)" }); }
     }
-    return { items: items, unmatched: unmatched, duplicateCount: duplicates, blankLines: blank, lineCount: lines.length };
+    return { items: items, asns: asns, unmatched: unmatched, duplicateCount: duplicates,
+      asnDuplicateCount: asnDuplicates, blankLines: blank, lineCount: lines.length };
   }
 
   function parseInput(text) { return parseWithReport(text).items; }
@@ -606,18 +626,379 @@
       res.counts = { 1: 0, 2: n, 3: 0, 4: 0, 6: 0 };
       res.pctIsp = 0; res.homeShare = 0;
       res.candidates = [];
+      /* 在线证据是直接证据：原来「只有类型先验、未评级」的行，现在有实测撑腰了 */
+      res.ungraded = false; res.priorOnly = false;
       res.onlineNote = "接口返回的 org 是「" + who + "」——" + online.why +
         "。这一段按机房处理（住宅 0%），别当纯净住宅用。";
     } else if (online.verdict === "MOBILE") {
-      res.tier = "B"; res.tierText = "移动网络（联网核验）";
-      res.source = "联网核验"; res.verified = true;
-      res.onlineNote = "接口标记这是移动网络（org「" + who + "」）：手机流量池，不是住宅固网。";
+      res.ungraded = false; res.priorOnly = false;
+      /* 云厂商整 /24 覆盖是确定性证据，不能被一次 mobile 抽样翻成 B */
+      if (res.source === "云厂商段表" || (res.cloud && res.cloud.full > 0)) {
+        res.verified = true;
+        res.onlineNote = "接口标记这是移动网络（org「" + who + "」），但这一段的整 /24 在云厂商公开段内；" +
+          "保留云厂商段表的机房判定，移动标记只作备注。";
+      } else {
+        res.tier = "B"; res.tierText = "移动网络（联网核验）";
+        res.source = "联网核验"; res.verified = true;
+        res.onlineNote = "接口标记这是移动网络（org「" + who + "」）：手机流量池，不是住宅固网。";
+      }
     } else {
       res.verified = true;
       res.onlineNote = "联网核验未发现机房/移动信号（org「" + who + "」，" + online.why +
         "）。这只能排除「明显机房」，不等于确认是住宅 IP —— 仍是 ASN 级估算。";
     }
     return res;
+  }
+
+  /* ---------- 3e. 三层证据：云厂商段 / 风险名单 / 二源 ASN 分歧 ----------
+     云厂商整 /24 覆盖是确定性证据，可以改判；风险名单和二源分歧只标注。
+     这不是保守，是口径：在名单里 ≠ 不是住宅；两源不一致 ≠ 谁一定对。 */
+
+  /* 一行展开后每个 /24 取一个代表地址（不是 254 个主机）。
+     第 4 段打码 / 单个 IP 都只对应一个 /24；第 2/3 段打码对应 256 个 /24。 */
+  function rowValueIps(r) {
+    var parts = String(r && r.pattern || "").split(".");
+    if (parts.length !== 4) { return []; }
+    var out = [], x, q;
+    if (r.starPos === 1) {
+      for (x = 0; x < 256; x++) { q = parts.slice(); q[1] = String(x); out.push(q.join(".")); }
+      return out;
+    }
+    if (r.starPos === 2) {
+      for (x = 0; x < 256; x++) { q = parts.slice(); q[2] = String(x); out.push(q.join(".")); }
+      return out;
+    }
+    if (r.starPos === 3) { return [parts[0] + "." + parts[1] + "." + parts[2] + ".1"]; }
+    if (r.starPos === -1) { return [parts.join(".")]; }
+    return [];
+  }
+  /* 风险名单是逐 IP 的（Tor 出口 / blocklist.de），第 4 段打码时要把 254 个主机都看一遍；
+     第 2/3 段打码只看每个 /24 的代表地址（256 个）。 */
+  function rowHostIps(r) {
+    var parts = String(r && r.pattern || "").split(".");
+    if (parts.length !== 4) { return []; }
+    if (r.starPos === 3) {
+      var out = [], q;
+      for (var h = HOST_LO; h <= HOST_HI; h++) { q = parts.slice(); q[3] = String(h); out.push(q.join(".")); }
+      return out;
+    }
+    if (r.starPos === -1) { return [parts.join(".")]; }
+    return rowValueIps(r);
+  }
+
+  function providerNames(list) {
+    return (list || []).map(function (p) { return { id: p.id, bit: p.bit, label: p.label, name: p.name, count: p.count }; });
+  }
+
+  function applyCloud(res, cloud) {
+    if (!res || !res.ok || !cloud || !cloud.ready || !cloud.ready()) { return res; }
+    var ips = rowValueIps(res);
+    if (!ips.length) { return res; }
+    var n = ips.length, any = 0, full = 0, first = null;
+    var bits = 0, fullBits = 0, provAny = {}, provFull = {}, provMeta = {};
+    for (var i = 0; i < ips.length; i++) {
+      var hit = cloud.lookupIp(ips[i]);
+      if (!hit) { continue; }
+      any++;
+      if (hit.fullBits) { full++; }
+      bits |= hit.bits;
+      fullBits |= hit.fullBits;
+      (hit.providers || []).forEach(function (p) {
+        provAny[p.id] = (provAny[p.id] || 0) + 1;
+        provMeta[p.id] = p;
+      });
+      (hit.fullProviders || []).forEach(function (p) {
+        provFull[p.id] = (provFull[p.id] || 0) + 1;
+        provMeta[p.id] = p;
+      });
+      if (!first) { first = hit; }
+    }
+    if (!any) { return res; }
+    var anyList = Object.keys(provAny).map(function (id) { return Object.assign({}, provMeta[id], { count: provAny[id] }); });
+    var fullList = Object.keys(provFull).map(function (id) { return Object.assign({}, provMeta[id], { count: provFull[id] }); });
+    res.cloud = {
+      bits: bits, fullBits: fullBits,
+      providers: anyList, fullProviders: fullList,
+      ids: anyList.map(function (p) { return p.id; }),
+      fullIds: fullList.map(function (p) { return p.id; }),
+      count: n, any: any, full: full,
+      share: n ? Math.round(100 * full / n) : 0,
+      network: n === 1 && first ? first.network : "",
+      first: first ? first.network : "",
+      scope: n === 1 ? "24" : "row",
+      override: false
+    };
+    /* 单个 /24（单 IP 或第 4 段打码）：整 /24 被覆盖才改判。
+       跨 256 个 /24 的行：整 /24 覆盖 ≥ 50% 才改判；否则只标注。 */
+    var override = (n === 1) ? (full === 1) : (full / n >= 0.5);
+    if (!override) { return res; }
+    res.tier = "D";
+    res.tierText = "机房/机构（云厂商段表）";
+    res.source = "云厂商段表";
+    res.approx = false; res.capped = false; res.dcHeavy = true;
+    res.pctIsp = 0; res.homeShare = 0;
+    res.probOnly = false; res.ungraded = false; res.priorOnly = false;
+    res.counts = { 1: 0, 2: res.sampled || n, 3: 0, 4: 0, 6: 0 };
+    res.candidates = [];
+    res.verified = true;
+    res.cloud.override = true;
+    if (res.host24) { res.host24.cat = CAT.DC; }
+    return res;
+  }
+
+  function applyBlocklist(res, bl) {
+    if (!res || !res.ok || !bl || !bl.ready || !bl.ready()) { return res; }
+    var ips = rowHostIps(res);
+    if (!ips.length) { return res; }
+    var counts = {}, srcMeta = {}, first = null, hits = 0;
+    for (var i = 0; i < ips.length; i++) {
+      var h = bl.lookupIp(ips[i]);
+      if (!h) { continue; }
+      hits++;
+      (h.sources || []).forEach(function (s) {
+        counts[s.id] = (counts[s.id] || 0) + 1;
+        srcMeta[s.id] = s;
+      });
+      if (!first) { first = h; }
+    }
+    if (!hits) { return res; }
+    var sources = Object.keys(counts).map(function (id) {
+      return Object.assign({}, srcMeta[id], { count: counts[id] });
+    }).sort(function (a, b) { return b.count - a.count; });
+    res.blocklist = {
+      bits: sources.reduce(function (b, s) { return b | (s.bit || 0); }, 0),
+      ids: sources.map(function (s) { return s.id; }),
+      sources: sources,
+      count: hits, sampled: ips.length,
+      range: first ? first.range : "",
+      scope: res.starPos === 3 ? "254 hosts" : (res.singleHost ? "single" : "256 blocks"),
+      note: "命中只说明这个 IP 在名单里，不代表它一定是机房或代理"
+    };
+    return res;
+  }
+
+  function applyAsnDiff(res, diff) {
+    if (!res || !res.ok || !diff || !diff.ready || !diff.ready()) { return res; }
+    var ips = rowValueIps(res);
+    if (!ips.length) { return res; }
+    var counts = {}, names = {}, first = null, hits = 0;
+    for (var i = 0; i < ips.length; i++) {
+      var h = diff.lookupIp(ips[i]);
+      if (!h) { continue; }
+      hits++;
+      counts[h.otherAsn] = (counts[h.otherAsn] || 0) + 1;
+      names[h.otherAsn] = h.otherName || "";
+      if (!first) { first = h; }
+    }
+    if (!hits) { return res; }
+    var others = Object.keys(counts).map(function (a) {
+      return { asn: Number(a), name: names[a] || "", count: counts[a] };
+    }).sort(function (a, b) { return b.count - a.count; }).slice(0, 3);
+    var pct = Math.round(100 * hits / ips.length);
+    res.asnDiff = {
+      otherAsn: first.otherAsn, otherName: first.otherName || "",
+      count: hits, sampled: ips.length, pct: pct,
+      others: others, range: first.range,
+      notable: res.singleHost || pct >= 10,
+      note: "两源不一致可能是迁移、更具体宣告或时间差；这里不判断谁对谁错"
+    };
+    return res;
+  }
+
+  /* 联网核验的优先级：越没底的行越先核验 */
+  function confidenceRank(r) {
+    if (!r || !r.ok) { return 9; }
+    if (r.cloud && r.cloud.override) { return 4; }      /* 确定性机房，不用再抽样 */
+    if (r.ungraded || priorOnly(r)) { return 0; }
+    if (r.capped) { return 1; }
+    if (r.source === "全球ASN" || r.approx) { return 2; }
+    return 3;
+  }
+
+  /* ---------- 3f. ASN 聚合行 ----------
+     一个 ASN 的宣告段可能多到十几万个 /24，不能一行一个 /24。
+     这里给一条聚合行：用这个 ASN 的住宅概率折算 counts，级别套与打码行同一把尺子。 */
+  function analyzeAsn(asn, opts) {
+    opts = opts || {};
+    var world = opts.world;
+    var num = Number(asn);
+    var res = {
+      pattern: "AS" + num, asn: num, ok: false, reason: "",
+      tier: "", tierText: "", found: false, starPos: -1, host4: null, singleHost: false,
+      asnRow: true, counts: { 1: 0, 2: 0, 3: 0, 4: 0, 6: 0 },
+      pctIsp: 0, dcHeavy: false, candidates: [], host24: null,
+      source: "全球ASN", approx: true, asnHist: {}, homeShare: 0, probOnly: true
+    };
+    if (!world || !world.ready || !world.ready()) { res.reason = "IP 归属表没加载"; return res; }
+    var entry = world.byNumber(num);
+    var prof = world.profileOf ? world.profileOf(num) : null;
+    if (!entry || !prof) { res.reason = "ASN 段表里没查到 AS" + num; return res; }
+    var rawP = world.prob(entry);
+    var p = Math.min(rawP, ASN_CONF_CAP);
+    res.capped = rawP > ASN_CONF_CAP;
+    res.asnProfile = {
+      asn: entry.asn, name: entry.name, cc: entry.cc, type: entry.t,
+      calibrated: world.calibrated(entry.asn),
+      probability: p, rawProbability: rawP,
+      segments: prof.segments, ranges: prof.ranges, addresses: prof.addresses,
+      blocks24: prof.blocks24, cidrs: prof.cidrs, firstIp: prof.firstIp,
+      sampleCidrs: prof.sampleCidrs
+    };
+    var sampled = prof.blocks24 || 1;
+    res.sampled = sampled;
+    res.asnHist[entry.asn] = sampled;
+    res.homeShare = p;
+    res.counts[1] = Math.round(p * sampled);
+    if (entry.t !== CAT.ISP) { res.counts[entry.t] = Math.round((1 - p) * sampled); }
+    res.pctIsp = Math.round(100 * p);
+    if (p >= 0.586) { res.tier = "A"; res.tierText = "住宅为主（按运营商估算）"; }
+    else if (p >= 0.234) { res.tier = "B"; res.tierText = "住宅+商业混合（按运营商估算）"; }
+    else if (p >= 0.078) { res.tier = "C"; res.tierText = "商业/机构为主（按运营商估算）"; }
+    else { res.tier = "D"; res.tierText = "机房/机构为主（按运营商估算）"; }
+    res.dcHeavy = entry.t === CAT.DC || res.counts[2] >= sampled * 0.5;
+    res.country = {
+      cc: entry.cc, count: sampled, n: sampled, pct: 100, kinds: 1, second: "",
+      viaCity: 0, viaAsn: sampled, miss: 0, src: "按 ASN 注册地 · IP 归属表"
+    };
+    res.city = null;
+    res.ok = true;
+    if (!world.calibrated(entry.asn)) {
+      res.priorOnly = true;
+      res.ungraded = true;
+      res.tier = ""; res.tierText = "";
+    }
+    return res;
+  }
+
+  function expandAsn(asn, opts) {
+    opts = opts || {};
+    var world = opts.world;
+    if (!world || !world.blocks24Of) { return []; }
+    var r = world.blocks24Of(asn, opts.cap || 64);
+    return r ? r.blocks : [];
+  }
+
+  /* ---------- 3g. 展示层用的筛选 / 排序（不改底层排名） ---------- */
+  function filterRows(rows, filter) {
+    filter = filter || {};
+    var tier = filter.tier || "all";
+    var country = String(filter.country || "").toUpperCase();
+    var city = String(filter.city || "").trim();
+    var flag = filter.flag || "all";
+    return (rows || []).filter(function (r) {
+      if (!r) { return false; }
+      if (tier !== "all") {
+        if (tier === "ab") { if (!(r.ok && (r.tier === "A" || r.tier === "B"))) { return false; } }
+        else if (tier === "x") { if (r.ok && r.tier) { return false; } }
+        else if (!(r.ok && r.tier === tier.toUpperCase())) { return false; }
+      }
+      if (country && !(r.country && String(r.country.cc).toUpperCase() === country)) { return false; }
+      if (city && !(r.city && String(r.city.city) === city)) { return false; }
+      if (flag !== "all") {
+        if (flag === "cloud") { if (!r.cloud) { return false; } }
+        else if (flag === "risk") { if (!r.blocklist) { return false; } }
+        else if (flag === "diff") { if (!r.asnDiff) { return false; } }
+        else if (flag === "any") { if (!(r.cloud || r.blocklist || r.asnDiff)) { return false; } }
+      }
+      return true;
+    });
+  }
+
+  function sortRows(rows, key, dir) {
+    key = key || "rank";
+    dir = dir === -1 ? -1 : 1;
+    var list = (rows || []).map(function (r, i) { return { r: r, i: i }; });
+    function val(r) {
+      if (!r) { return null; }
+      switch (key) {
+        case "tier": return TIER_ORDER[r.tier] != null ? TIER_ORDER[r.tier] : 9;
+        case "score": return r.ok && r.tier && !r.ungraded ? rowScore(r) : null;
+        case "pct": return r.ok && r.tier ? homePct(r) : null;
+        case "country": return r.country ? r.country.cc : null;
+        case "city": return r.city ? r.city.city : null;
+        case "pattern": return String(r.pattern || "");
+        default: return r.rank == null ? null : r.rank;
+      }
+    }
+    list.sort(function (a, b) {
+      var va = val(a.r), vb = val(b.r);
+      if (va == null && vb == null) { return a.i - b.i; }
+      if (va == null) { return 1; }                       /* 缺值的永远排后面 */
+      if (vb == null) { return -1; }
+      if (typeof va === "string" || typeof vb === "string") {
+        va = String(va); vb = String(vb);
+        if (va === vb) { return a.i - b.i; }
+        return dir * (va < vb ? -1 : 1);
+      }
+      if (va === vb) { return a.i - b.i; }
+      return dir * (va - vb);
+    });
+    return list.map(function (x) { return x.r; });
+  }
+
+  /* ---------- 3h. 机器可读导出 ----------
+     只序列化展示需要的字段；不要把内部行直接 stringify（asnProfile.ranges、完整 enrich 都太大）。 */
+  function evidenceOut(s) {
+    if (!s) { return null; }
+    var o = { ok: !!s.ok, error: s.error || "" };
+    ["found", "ptr", "name", "range", "country", "url"].forEach(function (k) {
+      if (s[k] !== undefined) { o[k] = s[k]; }
+    });
+    return o;
+  }
+  function toJson(rows, meta) {
+    meta = meta || {};
+    var out = {
+      schema: "ipurity-export/v1",
+      generated: meta.generated || new Date().toISOString(),
+      build: meta.build || "",
+      sources: meta.sources || {},
+      filter: meta.filter || null,
+      rows: (rows || []).map(function (r) {
+        return {
+          rank: r.rank == null ? null : r.rank,
+          pattern: String(r.pattern || ""),
+          kind: r.asnProfile ? "asn" : (r.singleHost ? "ip" : "pattern"),
+          sourceLine: r.sourceLine == null ? null : r.sourceLine,
+          ok: !!r.ok,
+          reserved: !!r.reserved,
+          ungraded: !!r.ungraded,
+          tier: r.tier || "",
+          tierText: r.tierText || "",
+          score: r.ok && r.tier && !r.ungraded ? rowScore(r) : null,
+          source: r.source || "",
+          approx: !!r.approx,
+          home: r.ok ? homeTxt(r) : "",
+          homePct: r.ok && r.tier ? homePct(r) : null,
+          counts: r.counts || null,
+          country: r.country ? { cc: r.country.cc, count: r.country.count, n: r.country.n, pct: r.country.pct, src: r.country.src } : null,
+          city: r.city ? { city: r.city.city, count: r.city.count, n: r.city.n, pct: r.city.pct, src: r.city.src } : null,
+          cloud: r.cloud ? { ids: r.cloud.ids, fullIds: r.cloud.fullIds, count: r.cloud.count, any: r.cloud.any, full: r.cloud.full, share: r.cloud.share, network: r.cloud.network, override: !!r.cloud.override } : null,
+          blocklist: r.blocklist ? { ids: r.blocklist.ids, count: r.blocklist.count, sampled: r.blocklist.sampled, range: r.blocklist.range } : null,
+          asnDiff: r.asnDiff ? { otherAsn: r.asnDiff.otherAsn, otherName: r.asnDiff.otherName, count: r.asnDiff.count, sampled: r.asnDiff.sampled, pct: r.asnDiff.pct } : null,
+          asnProfile: r.asnProfile ? {
+            asn: r.asnProfile.asn, name: r.asnProfile.name, cc: r.asnProfile.cc, type: r.asnProfile.type,
+            calibrated: r.asnProfile.calibrated, probability: r.asnProfile.probability,
+            segments: r.asnProfile.segments, cidrs: r.asnProfile.cidrs,
+            blocks24: r.asnProfile.blocks24, firstIp: r.asnProfile.firstIp
+          } : null,
+          online: r.online ? {
+            verdict: r.online.verdict, provider: r.online.provider, org: r.online.org, isp: r.online.isp,
+            checked: r.online.checked, sampled: r.online.sampled, ok: !!r.online.ok,
+            why: r.online.why, note: r.onlineNote || ""
+          } : null,
+          onlineEvidence: r.onlineEvidence ? {
+            ip: r.onlineEvidence.ip, at: r.onlineEvidence.at,
+            rdap: evidenceOut(r.onlineEvidence.rdap), ptr: evidenceOut(r.onlineEvidence.ptr)
+          } : null,
+          candidates: (r.candidates || []).slice(0, 3).map(function (c) {
+            return { ip: c.ip, city: c.city, isp: c.isp };
+          }),
+          note: r.reason || r.onlineNote || ""
+        };
+      })
+    };
+    return JSON.stringify(out, null, 2);
   }
 
   function sortCandidates(list) {
@@ -769,9 +1150,26 @@
      `tiers` 传了就按级别筛（导出「只含 A/B」那种用法）；不传则全部导出 ——
      包括未评级和不可路由的行：用户粘了几行，导出就该有几行，没有的格子留空，
      不能因为我们没给级别就把他的行悄悄丢掉。 */
+  /* CSV 末尾那一列的标记串：cloud:aws+gcp;bl:drop+tor;diff:AS123
+     云段只有部分覆盖时在 id 后面加 ?，别让它看起来像整 /24 改判。 */
+  function markerTxt(r) {
+    var parts = [];
+    if (r && r.cloud) {
+      var ids = (r.cloud.fullIds && r.cloud.fullIds.length)
+        ? r.cloud.fullIds
+        : (r.cloud.ids || []).map(function (id) { return id + "?"; });
+      if (ids.length) { parts.push("cloud:" + ids.join("+")); }
+    }
+    if (r && r.blocklist && r.blocklist.ids && r.blocklist.ids.length) {
+      parts.push("bl:" + r.blocklist.ids.join("+"));
+    }
+    if (r && r.asnDiff) { parts.push("diff:AS" + r.asnDiff.otherAsn); }
+    return parts.join(";");
+  }
+
   function toCsv(rows, tiers, perRow) {
     perRow = perRow || 3;
-    var out = [T("排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前" + perRow + ")")];
+    var out = [T("排名,IP模式,主要城市,主要国家,级别,级别说明,数据来源,得分,住宅,住宅%,机房%,商业%,移动%,参考枚举IP(前" + perRow + "),名单/云段/二源标记")];
     rows.forEach(function (r) {
       if (!r.ok && !r.reserved) { return; }                       /* 判失败的行不进导出 */
       if (tiers && tiers.length && (!r.tier || tiers.indexOf(r.tier) < 0)) { return; }
@@ -784,7 +1182,7 @@
         r.source || T("实测记录"), r.tier ? r.score : "",
         csvCell(homeTxt(r)), (priorOnly(r) || !r.tier) ? "" : homePct(r),
         pct(r.counts[2], n), pct(r.counts[3], n), pct(r.counts[4], n),
-        csvCell(picks)
+        csvCell(picks), csvCell(markerTxt(r))
       ].join(","));
     });
     return out.join("\n");
@@ -816,6 +1214,11 @@
     isValidPattern: isValidPattern, analyze: analyze, analyzeGlobal: analyzeGlobal,
     analyzeItem: analyzeItem, analyzeMany: analyzeMany, countRows: countRows,
     applyOnline: applyOnline,
+    applyCloud: applyCloud, applyBlocklist: applyBlocklist, applyAsnDiff: applyAsnDiff,
+    confidenceRank: confidenceRank,
+    analyzeAsn: analyzeAsn, expandAsn: expandAsn,
+    rowValueIps: rowValueIps, rowHostIps: rowHostIps,
+    filterRows: filterRows, sortRows: sortRows, toJson: toJson, markerTxt: markerTxt,
     sortCandidates: sortCandidates, toCsv: toCsv, toCsvCandidates: toCsvCandidates,
     rankRows: rankRows, rowScore: rowScore,
     scoreBand: scoreBand,

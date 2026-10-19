@@ -39,6 +39,9 @@
 
   /* 报告对象：不写死某个候选，按「你能落到的最优 IP」来取证 */
   function targetOf(row) {
+    if (row && row.asnProfile && row.asnProfile.firstIp) {
+      return { ip: row.asnProfile.firstIp, why: "该 ASN 宣告段里的第一个地址" };
+    }
     var p = String((row && row.pattern) || "");
     if (/^\d+\.\d+\.\d+\.\d+$/.test(p)) { return { ip: p, why: "这一行就是一个真实 IP" }; }
     var c = (row && row.candidates || [])[0];
@@ -266,6 +269,40 @@
       }).join("") + "</div>";
   }
 
+  /* 「联网核验」顺手补的两条证据（RDAP + PTR）。它不是完整的「实测取证」，
+     所以单独一小节，等用户点「实测取证」后再显示完整报告。 */
+  function rowEvidenceBlock(ev) {
+    if (!ev) { return ""; }
+    var rows = [];
+    if (ev.rdap) {
+      var dc = false;
+      if (ev.rdap.ok && window.IPEnrich && IPEnrich.dcRe) {
+        dc = IPEnrich.dcRe.test([ev.rdap.name, (ev.rdap.entities || []).join(" ")].join(" "));
+      }
+      rows.push(cell("RDAP 注册记录",
+        ev.rdap.ok
+          ? ("<b>" + esc(ev.rdap.name || ev.rdap.handle || "（无 name 字段）") + "</b>" +
+            (ev.rdap.range ? "<br><span class='mono-s'>" + esc(ev.rdap.range) + "</span>" : "") +
+            (ev.rdap.country ? " · " + esc(ev.rdap.country) : ""))
+          : "<span class='mono-s'>未获取 —— " + esc(ev.rdap.error || "没有返回") + "</span>",
+        ev.rdap.ok && ev.rdap.url
+          ? '<a href="' + esc(ev.rdap.url) + '" target="_blank" rel="noopener">RDAP 原始记录</a>'
+          : "rdap.org",
+        ev.rdap.ok ? (dc ? "d" : "x") : "x"));
+    }
+    if (ev.ptr) {
+      var ptrTxt = (ev.ptr.found && ev.ptr.ptr && ev.ptr.ptr.length) ? ev.ptr.ptr.join(", ") : "";
+      rows.push(cell("反向解析 PTR",
+        ev.ptr.ok
+          ? (ptrTxt ? "<b>" + esc(ptrTxt) + "</b>" : "<span class='mono-s'>无 PTR 记录</span>")
+          : "<span class='mono-s'>未获取 —— " + esc(ev.ptr.error || "没有返回") + "</span>",
+        ev.ptr.url ? '<a href="' + esc(ev.ptr.url) + '" target="_blank" rel="noopener">DoH PTR</a>' : "DoH PTR",
+        ev.ptr.ok && ptrTxt && window.IPEnrich && IPEnrich.dcRe && IPEnrich.dcRe.test(ptrTxt) ? "d" : "x"));
+    }
+    if (!rows.length) { return ""; }
+    return '<p class="rsub">联网核验附带证据 · ' + esc(ts(ev.at)) + '</p><div class="rfacts">' + rows.join("") + "</div>";
+  }
+
   function body(rowData, World, en) {
     var tgt = targetOf(rowData);
     var head = tgt
@@ -276,7 +313,8 @@
     var off = factsOffline(rowData, World);
     /* 没取证：只说清楚「查什么」—— 分数 / 标签都没有实测证据撑腰，不摆上来充数 */
     if (!en) {
-      return head + (off.length ? '<div class="rfacts">' + off.join("") + "</div>" : "") +
+      return head + rowEvidenceBlock(rowData.onlineEvidence) +
+        (off.length ? '<div class="rfacts">' + off.join("") + "</div>" : "") +
         '<p class="rhint">点「实测取证」查这个 IP 的 RDAP 注册记录 · 反向解析 PTR · Team Cymru 与 RIPEstat 两路 BGP · Shodan InternetDB 扫描记录 ——' +
         "离线库只到 ASN 这一层，认不出同一个 ASN 里的机房段。</p>";
     }

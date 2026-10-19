@@ -72,5 +72,43 @@ for (const a of assets.filter((x) => x.endsWith(".js"))) {
   check(`${a} 语法可解析`, !err, err);
 }
 
+/* 证据层的新数据包 + PWA 资源：缺一个，页面就会少一层能力或装不上 */
+for (const f of [
+  "data/cloud-pack.bin", "data/cloud-meta.js",
+  "data/blocklists.bin", "data/blocklists.js",
+  "data/asn-disagree.bin", "data/asn-disagree.js",
+  "manifest.webmanifest", "sw.js", "assets/icon-192.png", "assets/icon-512.png"
+]) {
+  check(`存在 ${f}`, existsSync(join(root, f)));
+}
+for (const a of ["assets/cloud.js", "assets/blocklists.js", "assets/asn-diff.js", "assets/history.js", "assets/share.js"]) {
+  check(`index.html 接入了 ${a}`, assets.includes(a));
+}
+
+const manifest = JSON.parse(readFileSync(join(root, "manifest.webmanifest"), "utf8"));
+check("manifest 有 name / start_url / icons",
+  !!manifest.name && !!manifest.start_url && Array.isArray(manifest.icons) && manifest.icons.length > 0);
+check("manifest 图标都存在",
+  (manifest.icons || []).every((i) => existsSync(join(root, i.src))),
+  (manifest.icons || []).map((i) => i.src).join(", "));
+
+const sw = readFileSync(join(root, "sw.js"), "utf8");
+const swBuild = (sw.match(/const BUILD = "([^"]+)";/) || [])[1];
+check("sw.js 的 BUILD 与 index.html 一致", swBuild === build, `${swBuild} vs ${build}`);
+check("sw.js 不拦截跨域请求", /url\.origin !== self\.location\.origin/.test(sw));
+const shellBlock = (sw.match(/const SHELL = \[([\s\S]*?)\];/) || [])[1] || "";
+const shellPaths = [...shellBlock.matchAll(/"([^"]+)"/g)]
+  .map((m) => m[1].split("?")[0])
+  .filter((p) => p && p !== "./");
+const shellGone = shellPaths.filter((p) => !existsSync(join(root, p)));
+check("sw.js 预缓存路径都存在", shellGone.length === 0, shellGone.join(", "));
+
+/* 表头 10 列 = 7 个可排序 + 3 个固定；失败行 colspan 必须同步为 6 */
+const headerBlock = (app.match(/var html = '<table><thead><tr>'([\s\S]*?)<\/thead><tbody>/) || [])[1] || "";
+const shCount = (headerBlock.match(/sh\("/g) || []).length;
+const thCount = (headerBlock.match(/<th[ >]/g) || []).length;
+check("表头列数 == 10（7 个可排序 + 3 个固定）", shCount + thCount === 10, `sh=${shCount} th=${thCount}`);
+check("失败行 colspan = 6（10 - 3 固定单元格 - 1 箭头）", /colspan="6"/.test(app));
+
 console.log(fail === 0 ? "\n页面接线自检通过 ✅" : `\n${fail} 项失败 ❌`);
 process.exit(fail === 0 ? 0 : 1);

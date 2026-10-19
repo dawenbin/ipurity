@@ -23,6 +23,8 @@
   var asnList = null;     // Map<asnNumber, {t, cc, name}>
   var calib = {};         // asn → [样本数, 住宅数]
   var calibNames = {};
+  var rangeCache = new Map();  // asn → {ranges, segments, addresses, blocks24}
+  var cidrCache = new Map();   // asn → ["a.b.c.0/24", ...]
   var sourceName = "";
   var generated = "";
 
@@ -43,9 +45,15 @@
     }
     return n;
   }
+  function intToIp(n) {
+    n = n >>> 0;
+    return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join(".");
+  }
 
   /* ---------- 装数据 ---------- */
   function putPack(buffer) {
+    rangeCache.clear();
+    cidrCache.clear();
     var bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
     var dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     var magic = "";
@@ -67,6 +75,8 @@
 
   /* window.GLOBAL_ASN 那样的对象（data/global-asn.js 里就是它） */
   function setMeta(json) {
+    rangeCache.clear();
+    cidrCache.clear();
     if (!json || !json.list) { throw new Error("global-asn 元数据格式不对"); }
     /* 段表里存的是“排序后 ASN 数组的下标”，而 global-asn.js 的 list 就是那个数组
        （tools/make-global-pack.mjs 里 asnList.sort 后按同序导出），所以这里按位对应。 */
@@ -74,7 +84,7 @@
     asnByNum = new Map();
     for (var i = 0; i < json.list.length; i++) {
       var r = json.list[i];
-      var e = { asn: r[0], t: r[1], cc: r[2] || "", name: r[3] || "" };
+      var e = { asn: r[0], t: r[1], cc: r[2] || "", name: r[3] || "", idx: i };
       asnList[i] = e;
       asnByNum.set(r[0], e);
     }
@@ -221,10 +231,157 @@
     return { pct: out, blocks24: Math.round(total), covered: Math.round(1000 * total * 256 / 4294967296) / 10 };
   }
 
+  /* ---------- ASN 反查：一个 ASN 宣告了哪些段 ----------
+     页面输入 AS4766 时要知道「这个 ASN 的全部宣告段」。段表是 539k 条，单次扫描
+     几十毫秒，按 ASN 缓存；一次查多个 ASN 时只扫一遍。 */
+  function scanRanges(asns) {
+    var targets = new Map();
+    (asns || []).forEach(function (a) {
+      var e = byNumber(a);
+      if (e && e.idx != null) { targets.set(e.idx, e.asn); }
+    });
+    var out = new Map();
+    targets.forEach(function (asn) {
+      out.set(asn, { ranges: [], segments: 0, addresses: 0, blocks24: 0 });
+    });
+    if (!starts || !targets.size) { return out; }
+    for (var i = 0; i < starts.length; i++) {
+      var asn = targets.get(asnIdx[i]);
+      if (asn == null) { continue; }
+      var s = starts[i];
+      var e = (i + 1 < starts.length ? starts[i + 1] : packEnd) - 1;
+      var o = out.get(asn);
+      o.segments++;
+      o.addresses += (e - s + 1);
+      o.blocks24 += Math.floor(e / 256) - Math.floor(s / 256) + 1;
+      var last = o.ranges[o.ranges.length - 1];
+      if (last && s <= last.end + 1) { if (e > last.end) { last.end = e; } }
+      else { o.ranges.push({ start: s, end: e }); }
+    }
+    out.forEach(function (v, asn) { rangeCache.set(asn, v); });
+    return out;
+  }
+  function infoOf(asn) {
+    var e = byNumber(asn);
+    if (!e || e.idx == null || !starts) { return null; }
+    if (!rangeCache.has(e.asn)) { scanRanges([e.asn]); }
+    return rangeCache.get(e.asn) || null;
+  }
+  function rangesOf(asn) {
+    var o = infoOf(asn);
+    return o ? o.ranges : null;
+  }
+  function rangesOfMany(asns) {
+    var need = [], seen = {};
+    (asns || []).forEach(function (a) {
+      var e = byNumber(a);
+      if (e && e.idx != null && !seen[e.asn]) { seen[e.asn] = 1; need.push(e.asn); }
+    });
+    var missing = need.filter(function (a) { return !rangeCache.has(a); });
+    if (missing.length) { scanRanges(missing); }
+    var out = new Map();
+    need.forEach(function (a) {
+      var o = rangeCache.get(a);
+      if (o) { out.set(a, o.ranges); }
+    });
+    return out;
+  }
+
+  /* [start,end] → 覆盖它的最少 CIDR 列表（标准「取最大对齐块」算法） */
+  function rangeToCidrs(start, end) {
+    var out = [];
+    start = start >>> 0;
+    end = end >>> 0;
+    while (start <= end) {
+      var size, prefix;
+      if (start === 0) { size = 4294967296; prefix = 0; }
+      else {
+        size = ((start & -start) >>> 0);
+        prefix = 32 - Math.round(Math.log2(size));
+      }
+      var remaining = end - start + 1;
+      while (size > remaining) { size = size / 2; prefix++; }
+      out.push(intToIp(start) + "/" + prefix);
+      if (size >= 4294967296) { break; }
+      start = (start + size) >>> 0;
+      if (start === 0) { break; }
+    }
+    return out;
+  }
+  function cidrsOf(asn) {
+    var e = byNumber(asn), o = infoOf(asn);
+    if (!e || !o) { return null; }
+    if (cidrCache.has(e.asn)) { return cidrCache.get(e.asn); }
+    var out = [];
+    for (var i = 0; i < o.ranges.length; i++) {
+      out = out.concat(rangeToCidrs(o.ranges[i].start, o.ranges[i].end));
+    }
+    cidrCache.set(e.asn, out);
+    return out;
+  }
+
+  function pattern24(idx) {
+    var p = intToIp(idx * 256).split(".");
+    return p[0] + "." + p[1] + "." + p[2] + ".*";
+  }
+  /* ASN 的 /24 列表：多到不能全展示时，按地址顺序均匀取 cap 个（不是只取前 cap 个，
+     否则会全落在同一个 /16 里，看不出这个 ASN 的分布）。 */
+  function blocks24Of(asn, cap) {
+    var o = infoOf(asn);
+    if (!o) { return null; }
+    cap = Math.max(1, cap || 64);
+    var total = o.blocks24;
+    if (total <= cap) {
+      var all = [];
+      for (var r = 0; r < o.ranges.length; r++) {
+        var a = Math.floor(o.ranges[r].start / 256), b = Math.floor(o.ranges[r].end / 256);
+        for (var i = a; i <= b; i++) { all.push(pattern24(i)); }
+      }
+      return { blocks: all, total: total, shown: all.length, truncated: false };
+    }
+    var spans = [], cum = [], acc = 0;
+    for (var q = 0; q < o.ranges.length; q++) {
+      var lo = Math.floor(o.ranges[q].start / 256), hi = Math.floor(o.ranges[q].end / 256);
+      var n = hi - lo + 1;
+      spans.push({ first: lo, n: n });
+      acc += n;
+      cum.push(acc);
+    }
+    var picks = [];
+    for (var k = 0; k < cap; k++) {
+      var target = cap === 1 ? 0 : Math.round(k * (total - 1) / (cap - 1));
+      var l = 0, h = cum.length - 1, idx = 0;
+      while (l <= h) {
+        var mid = (l + h) >> 1;
+        if (cum[mid] > target) { idx = mid; h = mid - 1; } else { l = mid + 1; }
+      }
+      var prev = idx > 0 ? cum[idx - 1] : 0;
+      picks.push(pattern24(spans[idx].first + (target - prev)));
+    }
+    return { blocks: picks, total: total, shown: picks.length, truncated: true };
+  }
+
+  function profileOf(asn) {
+    var e = byNumber(asn), o = infoOf(asn);
+    if (!e || !o) { return null; }
+    var cidrs = cidrsOf(asn) || [];
+    return {
+      asn: e.asn, name: e.name, cc: e.cc, type: e.t,
+      segments: o.segments, ranges: o.ranges.length, addresses: o.addresses,
+      blocks24: o.blocks24, cidrs: cidrs.length,
+      firstIp: o.ranges.length ? intToIp(o.ranges[0].start) : "",
+      sampleCidrs: cidrs.slice(0, 8)
+    };
+  }
+
   return {
     putPack: putPack, setMeta: setMeta, setCalib: setCalib, load: load,
     asnOf: asnOf, prob: prob, lookup: lookup, coverage: coverage,
     byNumber: byNumber, probOfNumber: probOfNumber,
+    rangesOf: rangesOf, rangesOfMany: rangesOfMany,
+    cidrsOf: cidrsOf, rangeToCidrs: rangeToCidrs,
+    blocks24Of: blocks24Of, profileOf: profileOf,
+    ipToInt: normalizeIp, intToIp: intToIp,
     /* 这个 ASN 有没有「够用的标定样本」：有 → prob() 是按实测 /24 折算的；
        没有 → prob() 只是关键词类型先验（类型 1 给 100%，其余 5%），那一档的百分比是常数。
        UI 靠它决定「写百分比」还是「只写类别」——先验摊出来的数不该冒充占比。 */

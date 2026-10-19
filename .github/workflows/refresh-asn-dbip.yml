@@ -1,0 +1,57 @@
+# 每月刷新二源 ASN 分歧层：DB-IP ASN Lite（CC BY 4.0，按月发布）
+#   与已提交的 data/global-pack.bin（iptoasn）逐 /24 对比，只输出 ASN 不一致的区间
+#   → data/asn-disagree.bin / data/asn-disagree.js
+#
+# 只比较两源都完整覆盖的 /24；命中的行标「两源不一致」，不判断谁对，也不改级别与得分。
+# 包内版本号做缓存键，不动构建戳；指纹没变不提交。
+
+name: refresh ASN disagreement
+
+on:
+  schedule:
+    - cron: "37 5 6 * *"          # 每月 6 号 05:37 UTC（月初没放当月版时脚本会自动退到上月）
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 下载 DB-IP ASN Lite → 与 iptoasn 逐 /24 对比 → 打包
+        id: refresh
+        run: node tools/refresh-data.mjs --dbip
+
+      - name: 数据自检（测试全绿才提交）
+        if: steps.refresh.outputs.changed == 'true'
+        run: node test/run-all.mjs
+
+      - name: 提交并推送
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          git config user.name "ipurity-bot"
+          git config user.email "ipurity-bot@users.noreply.github.com"
+          git add -A data
+          git commit -m "data: 刷新二源 ASN 分歧（DB-IP ASN Lite）"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || exit 1
+            if git push; then pushed=1; break; fi
+            echo "第 $i 次推送被拒，15 秒后重试"; sleep 15
+          done
+          test -n "$pushed"
+
+      - name: 数据没变化
+        if: steps.refresh.outputs.changed != 'true'
+        run: echo "上游与本仓库内容一致，未提交。" >> "$GITHUB_STEP_SUMMARY"

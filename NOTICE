@@ -19,20 +19,47 @@ Attribution and license terms of those sources apply to the included data.
    Source: PeeringDB info_type (https://www.peeringdb.com/) — CC BY 4.0.
 
 4. 机房 / VPN ASN 名单
-   Source: bad-asn-list (https://github.com/ipapi-is/ipapi)
+   Source: bad-asn-list (https://github.com/brianhama/bad-asn-list)
 
 5. 城市数据 — data/city/*.bin
    Source: DB-IP City Lite (https://db-ip.com/) — CC BY 4.0.
    Contains data from DB-IP, licensed under CC BY 4.0. Attribution is required:
    "IP Geolocation by DB-IP (https://db-ip.com)".
 
-6. 可选联网核验（仅在用户点击时请求，不随本产品分发）
+6. 云厂商段表 — data/cloud-pack.bin
+   AWS: https://ip-ranges.amazonaws.com/ip-ranges.json
+   Google Cloud: https://www.gstatic.com/ipranges/cloud.json
+   Cloudflare: https://www.cloudflare.com/ips-v4
+   Microsoft Azure Service Tags: https://www.microsoft.com/download/details.aspx?id=56519
+   These are the providers' own published ranges. Azure Service Tags describe
+   service endpoints rather than only VM ranges; they are fetched best-effort
+   and the build marks the source unavailable if the download fails.
+
+7. 风险名单 — data/blocklists.bin
+   Spamhaus DROP (https://www.spamhaus.org/drop/) — free for non-commercial use;
+   commercial use requires a Spamhaus data subscription.
+   IPsum (https://github.com/stamparm/ipsum) — aggregated blocklist, see the
+   repository for its license terms.
+   Tor bulk exit list (https://check.torproject.org/torbulkexitlist) — Tor Project.
+   blocklist.de (https://www.blocklist.de/) — free for non-commercial use;
+   commercial use requires a fee agreement with blocklist.de.
+   Hits are shown as annotations only: being listed is a fact about the address,
+   not a conclusion that it is not residential.
+
+8. 二源 ASN 分歧 — data/asn-disagree.bin
+   DB-IP ASN Lite (https://db-ip.com/) — CC BY 4.0, monthly snapshot.
+   Contains data from DB-IP, licensed under CC BY 4.0. Attribution is required:
+   "IP Geolocation by DB-IP (https://db-ip.com)".
+   Only ranges where DB-IP and the IP 归属表 disagree are included; the product
+   does not decide which source is correct.
+
+9. 可选联网核验（仅在用户点击时请求，不随本产品分发）
    ipwho.is (https://ipwho.is/), ip-api.com (https://ip-api.com/)
 
-7. 可选实测取证（仅在用户点击时请求，不随本产品分发）
+10. 可选实测取证（仅在用户点击时请求，不随本产品分发）
    RDAP: rdap.org and the RIRs; DNS over HTTPS: Cloudflare (https://cloudflare-dns.com/)
    and Google (https://dns.google/); BGP data via Team Cymru (whois.cymru.com) and
    RIPEstat / RIS (https://stat.ripe.net/); host scan data via Shodan InternetDB
    (https://internetdb.shodan.io/).
 
-8. 国旗图片 — flagcdn.com (https://flagcdn.com/)（页面运行时加载）
+11. 国旗图片 — flagcdn.com (https://flagcdn.com/)（页面运行时加载）

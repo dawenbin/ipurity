@@ -6,7 +6,7 @@
  * 不换 URL 就会「新 HTML + 旧 JS」。改过 assets/ data/ index.html 就要换一次，
  * 数据刷新脚本（tools/refresh-data.mjs）也用它，所以放进仓库而不是留在本地。
  */
-import { readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -48,4 +48,13 @@ function toLetters(n) {
 const n = s.split(cur).length - 1;
 s = s.split(cur).join(next);
 writeFileSync(file, crlf ? s.split("\n").join("\r\n") : s);
+
+/* Service Worker 的预缓存 URL 和缓存名也用同一个构建戳；不改它会出现
+   「HTML 已经是新戳、SW 还在 precache 旧 URL」的 404。 */
+const swFile = join(root, "sw.js");
+if (existsSync(swFile)) {
+  const sw = readFileSync(swFile, "utf8");
+  const nextSw = sw.replace(/const BUILD = "[^"]*";/, 'const BUILD = "' + next + '";');
+  if (nextSw !== sw) { writeFileSync(swFile, nextSw); }
+}
 console.log(`build ${cur} -> ${next}（${n} 处）`);

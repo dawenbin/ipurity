@@ -1,0 +1,57 @@
+# 每周刷新云厂商段层：AWS / Google Cloud / Cloudflare / Azure Service Tags
+#   → data/cloud-pack.bin / data/cloud-meta.js
+#
+# 只有「整个 /24 都被厂商段覆盖」才改判 D；只覆盖一部分的只标注。
+# Azure 是 best-effort：下载失败就保留旧文件，并在 meta 的 status 里标注 unavailable。
+# 包内版本号做缓存键，不动构建戳；指纹没变不提交。
+
+name: refresh cloud ranges
+
+on:
+  schedule:
+    - cron: "29 5 * * 1"          # 每周一 05:29 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 拉四家段表 → 合并 /24 区间 → 打包
+        id: refresh
+        run: node tools/refresh-data.mjs --cloud
+
+      - name: 数据自检（测试全绿才提交）
+        if: steps.refresh.outputs.changed == 'true'
+        run: node test/run-all.mjs
+
+      - name: 提交并推送
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          git config user.name "ipurity-bot"
+          git config user.email "ipurity-bot@users.noreply.github.com"
+          git add -A data
+          git commit -m "data: 刷新云厂商段表（AWS/GCP/Cloudflare/Azure）"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || exit 1
+            if git push; then pushed=1; break; fi
+            echo "第 $i 次推送被拒，15 秒后重试"; sleep 15
+          done
+          test -n "$pushed"
+
+      - name: 数据没变化
+        if: steps.refresh.outputs.changed != 'true'
+        run: echo "上游与本仓库内容一致，未提交。" >> "$GITHUB_STEP_SUMMARY"

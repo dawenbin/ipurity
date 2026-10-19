@@ -17,8 +17,8 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 /* 每个测试文件：标题 + 单独跑的命令 + 这一节覆盖什么 */
 const FILES = {
   "test-page.mjs": {
-    title: "页面接线",
-    about: "index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资源都在、所有脚本带同一个构建戳、九个 js 都能解析。"
+    title: "页面接线与 PWA",
+    about: "index.html 与 assets/*.js 的接口没断：引用的 id 都存在、本地资源都在、所有脚本带同一个构建戳、manifest 与 sw.js 的构建戳一致、预缓存路径存在、10 列表头与失败行 colspan 对齐。"
   },
   "test-inline.mjs": {
     title: "粘贴清单的清洗与识别",
@@ -36,6 +36,22 @@ const FILES = {
     title: "城市数据包",
     about: "220 个 /8 切片能否解析、段表有序、城市索引不越界、枚举取值能定位。"
   },
+  "test-asn.mjs": {
+    title: "ASN 输入与聚合",
+    about: "AS 前缀的大小写 / 去重 / 混合行 / 上限 50；区间回查、CIDR 展开、均匀取样、聚合行字段、未知 ASN、展开上限。"
+  },
+  "test-cloud.mjs": {
+    title: "云厂商段包",
+    about: "CLOUDPK1 格式与有序性、整 /24 覆盖才改判 D、部分覆盖只标注、跨 256 个 /24 的 50% 阈值、NOTICE 署名。"
+  },
+  "test-blocklists.mjs": {
+    title: "风险名单包",
+    about: "四个来源的解析器、IPBLK001 格式、命中只标注（不改级别 / 得分 / 计数）、第 4 段打码按 254 个主机统计。"
+  },
+  "test-asndiff.mjs": {
+    title: "二源 ASN 分歧",
+    about: "ASNDIF01 格式、包内回查、区间交集统计、标注不改级别 / 来源 / 得分、DB-IP 许可与对比月份。"
+  },
   "test-online.mjs": {
     title: "联网核验（抽样改判）",
     about: "按打码位置抽样、抽样里只要有一个机房就整行改判 D、接口全挂时不改级别只提示。"
@@ -43,6 +59,14 @@ const FILES = {
   "test-enrich.mjs": {
     title: "实测取证（单 IP 报告）",
     about: "RDAP / DoH PTR / Team Cymru / RIPEstat / InternetDB 五个来源的解析、前缀校验、分数可追溯、查不到写「未获取」。"
+  },
+  "test-export.mjs": {
+    title: "导出、分享与对比",
+    about: "JSON schema / 来源 / 无 NaN、SVG 自包含与 XML 转义、分享链接长度守卫、历史快照上限与 diff 状态。"
+  },
+  "test-ui-core.mjs": {
+    title: "筛选、排序与置信度",
+    about: "filterRows 的单条件与组合、sortRows 的缺值后排与稳定排序、confidenceRank 的核验优先级。"
   },
   "test-i18n.mjs": {
     title: "中英词条",
@@ -60,13 +84,34 @@ const MANUAL = [
     "详情抽屉：定义格标签一列对齐，构成条宽度加起来 100%",
     "实测取证面板：五个来源合并成两行，一屏装得下",
     "不可路由的行：表格里写「不可路由」，不摆成失败的样子（不是「—」）",
+    "标记列最多两个 badge + `+N`，抽屉里能看到完整名单 / 厂商 / 两源 ASN",
+    "筛选行：国家 / 标记 / 城市 / 排序 / 对比下拉可用，没有结果时表格有空态提示",
+    "列头排序：点一次升序、再点降序，缺值（未评级 / 失败）始终排最后",
+    "对比快照：级别变好 ↑ 绿、变差 ↓ 红、仅得分变 ~ 灰；「新」行有标记",
     "中英切换：表格、详情、报告、提示、占位符全部跟着换，英文界面不露中文"
+  ]],
+  ["证据层与 ASN", [
+    "`AS4766` → 一条聚合行，显示名称 / 类型 / 国家 / 段数 / CIDR 数 / `/24` 数；展开 ≤64 行，第二次展开计入 128/会话上限",
+    "云厂商整 `/24` IP → D + `云厂商段表` + 厂商 badge；同一 /24 只部分覆盖的 IP → 级别不变、只有 badge",
+    "名单命中的住宅行 → badge 出现，级别 / 得分 / 构成条都不变",
+    "两源不一致的行 → 两个 ASN + 对比月份，级别与得分不变",
+    "「联网核验」先做未评级 / 估算行；抽屉与报告显示 RDAP / PTR 或「未获取」"
   ]],
   ["导出与复制（自检只验核心函数，不验浏览器下载）", [
     "「导出排名」的 CSV 用 Excel 打开不乱码、列数对齐（运营商名带逗号时必须被引号包住）",
     "「导出枚举」列数对齐，行数多于排名表",
     "「复制排名」粘到记事本里是制表符分隔、能对齐",
-    "「复制本行候选」粘出来的行数与提示里的数字一致"
+    "「复制本行候选」粘出来的行数与提示里的数字一致",
+    "「导出 JSON」无 BOM、`JSON.parse` 能过、`rows` 与当前可见行一致、含各数据包日期",
+    "「分享卡片」的 SVG 用浏览器独立打开无网络请求、最多 8 行、中文不溢出",
+    "「复制链接」在新窗口能恢复清单；超长清单被拒绝并提示导出 JSON",
+    "刷新页面后对比下拉里仍有上次快照；清除浏览器数据后消失"
+  ]],
+  ["PWA 与离线", [
+    "Application 面板：manifest 名称 / 图标正常，Service Worker 状态为 activated",
+    "首访后切 Offline 刷新：页面外壳仍能打开（数据包按需读取，未缓存的部分显示「未加载」而不是空结果）",
+    "DevTools Network：页面加载只请求同源 `data/*`，没有新增跨域请求",
+    "改了数据包但不换构建戳时，元数据仍会重新校验（network-first），不会卡在旧版本"
   ]],
   ["数据与网络", [
     "首次打开：IP 归属表（4.1 MB）后台下完，顶部覆盖数字出现",
@@ -132,11 +177,23 @@ const TOPICS = [
   ["IP 归属表与标定库", "test-global.mjs",
     ["段表", "ASN 元数据", "标定表", "有序", "段表外", "Cymru", "压成", "保持高住宅", "打码行在 IP 归属表"]],
   ["城市数据", "test-city.mjs", ["切片", "index.json", "城市索引", "枚举出"]],
+  ["ASN 输入与聚合", "test-asn.mjs",
+    ["ASN", "AS ", "反查", "rangesOf", "cidrsOf", "blocks24Of", "analyzeAsn", "expandAsn", "上限"]],
+  ["云厂商段", "test-cloud.mjs",
+    ["CLOUDPK1", "整 /24", "部分覆盖", "50%", "49%", "overlapRanges", "NOTICE"]],
+  ["风险名单", "test-blocklists.mjs",
+    ["DROP", "IPsum", "纯 IP", "合并", "IPBLK001", "命中", "254", "NOTICE"]],
+  ["二源 ASN 分歧", "test-asndiff.mjs", ["ASNDIF01", "DB-IP", "overlapRanges", "不改级别", "许可", "对比月份"]],
   ["联网核验", "test-online.mjs", ["机房", "抽", "改判", "接口全挂", "https", "限速", "封顶", "probOnly", "X 级"]],
   ["实测取证", "test-enrich.mjs",
     ["RDAP", "PTR", "Cymru", "RIPEstat", "InternetDB", "超时", "未获取", "BGP", "漏洞", "基线分", "分数明细"]],
+  ["导出与分享", "test-export.mjs",
+    ["JSON", "SVG", "shareUrl", "decodeShare", "超长", "快照", "same", "score-up", "worsened", "new", "truncated"]],
+  ["筛选、排序与置信度", "test-ui-core.mjs",
+    ["筛选", "排序", "降序", "缺", "稳定", "置信度", "云计算", "核验"]],
   ["中英词条", "test-i18n.mjs", ["title", "正文", "占位符", "句子", "词条", "规则页", "重复"]],
-  ["页面接线与构建戳", "test-page.mjs", ["id 都有", "本地资源", "构建戳", "语法可解析", "挂到 window"]]
+  ["页面接线与 PWA", "test-page.mjs",
+    ["id 都有", "本地资源", "构建戳", "语法可解析", "挂到 window", "manifest", "sw.js", "colspan", "表头"]]
 ];
 
 const out = [];

@@ -44,26 +44,36 @@ function citySlice(o1) {
 
 const argv = process.argv.slice(2);
 const inputs = [];
-let top = 5, online = false, onlineSamples = 3;
+let top = 5, online = false, onlineSamples = 3, expand = 0, cidrs = 0;
 for (let i = 0; i < argv.length; i++) {
   if (argv[i] === "--top") { top = Number(argv[++i]) || 5; }
   else if (argv[i] === "--online") { online = true; }
   else if (argv[i] === "--online-samples") { onlineSamples = Number(argv[++i]) || 3; }
+  else if (argv[i] === "--expand") { expand = Math.max(0, Math.min(256, Number(argv[++i]) || 0)); }
+  else if (argv[i] === "--cidrs") { cidrs = Math.max(0, Math.min(5000, Number(argv[++i]) || 0)); }
   else { inputs.push(argv[i]); }
 }
 
 if (!inputs.length) {
-  console.log('用法: node tools/query.mjs "198.*.42.81" [更多模式] [--top 5] [--online]');
+  console.log('用法: node tools/query.mjs "198.*.42.81" [AS4766] [更多模式] [--top 5] [--online]');
   console.log('  城市名一律城市数据原文（DB-IP 的英文名，不做本地化）');
-  console.log('  --online  联网核验：抽样几个 IP 问 ipwho.is / ip-api，把「ASN 里的机房段」挑出来');
+  console.log('  AS4766     按 ASN 聚合：名称 / 国家 / 段数 / CIDR 数 / /24 数 / 级别');
+  console.log('  --expand N 展开该 ASN 的 N 个 /24（均匀取样，最多 256）');
+  console.log('  --cidrs N  列出该 ASN 的 N 个 CIDR（最多 5000）');
+  console.log('  --online   联网核验：抽样几个 IP 问 ipwho.is / ip-api，把「ASN 里的机房段」挑出来');
   process.exit(1);
 }
 
 /* 先过一遍清洗层：CIDR（198.3.242.0/24）、全角、转义星号、空格分段都能吃下 */
 let patterns = [];
+let asns = [];
 for (const raw of inputs) {
   const rep = Core.parseWithReport(raw);
-  if (!rep.items.length) { patterns.push(raw); continue; }
+  for (const a of rep.asns) { if (asns.indexOf(a.asn) < 0) { asns.push(a.asn); } }
+  if (!rep.items.length) {
+    if (!rep.asns.length) { patterns.push(raw); }
+    continue;
+  }
   patterns = patterns.concat(rep.items.map((it) => it.pattern));
 }
 
@@ -129,5 +139,50 @@ for (const p of patterns) {
   const cands = Core.sortCandidates(r.candidates).slice(0, top);
   for (const c of cands) {
     console.log(`  → ${c.ip}  ${Core.cityLabel(c.city)}${c.city ? " · " : ""}${c.isp}`);
+  }
+}
+
+/* ---------- ASN：一条聚合概览 + 可选展开 ---------- */
+if (asns.length && !worldOk) {
+  console.log("ASN 查询需要 data/global-pack.bin + data/global-asn.js");
+}
+const num = (x) => Number(x || 0).toLocaleString("en-US");
+for (const asn of worldOk ? asns : []) {
+  const r = Core.analyzeAsn(asn, { world: World });
+  const head = `AS${asn}`;
+  if (!r.ok) { console.log(`${head}\n  ✗ ${r.reason}`); continue; }
+  const p = r.asnProfile;
+  const entry = World.byNumber(asn) || {};
+  const typeName = Core.CAT_NAME[entry.t] || "未知";
+  console.log(head);
+  console.log(`  ${p.name || "（无名称）"}  ·  ${p.cc || "??"}  ·  ${typeName}`);
+  console.log(`  段 ${num(p.segments)}  合并区间 ${num(p.ranges)}  CIDR ${num(p.cidrs)}` +
+    `  /24 ${num(p.blocks24)}  地址 ${num(p.addresses)}  首个 ${p.firstIp || "?"}`);
+  if (r.ungraded) {
+    console.log(`  未评级 · ${Core.CAT_NAME[Core.topCat(r)] || "未知"}  （这个 ASN 一个标定样本都没有：` +
+      `只有类型先验，没有密度数据，不报级别 / 得分 / 概率）`);
+    console.log(`  按先验折算：住宅 ${r.counts[1]}  机房 ${r.counts[2]}  商业 ${r.counts[3]}  移动 ${r.counts[4]}` +
+      `（${num(r.sampled)} 个 /24）`);
+  } else {
+    console.log(`  住宅概率（ASN 级） ≈${(r.pctIsp || 0)}%` +
+      (r.capped ? `（原始 ${(p.rawProbability * 100).toFixed(1)}%，按上限封顶 ${Math.round(Core.ASN_CONF_CAP * 100)}%）` : "") +
+      `  [${r.source}]`);
+    console.log(`  ${r.tier} 级 · ${r.tierText}  得分 ${Core.rowScore(r)}`);
+    console.log(`  住宅 ${r.counts[1]}  机房 ${r.counts[2]}  商业 ${r.counts[3]}  移动 ${r.counts[4]}` +
+      `（按 ${num(r.sampled)} 个 /24 折算）`);
+  }
+  if (expand > 0) {
+    const blocks = Core.expandAsn(asn, { world: World, cap: expand });
+    console.log(`  展开 /24（${blocks.length}/${num(p.blocks24)}，按地址顺序均匀取样）：`);
+    for (const b of blocks) { console.log(`    ${b}`); }
+  }
+  if (cidrs > 0) {
+    const list = World.cidrsOf(asn) || [];
+    console.log(`  CIDR（${Math.min(list.length, cidrs)}/${num(list.length)}）：`);
+    for (const c of list.slice(0, cidrs)) { console.log(`    ${c}`); }
+    if (list.length > cidrs) { console.log(`    … 还有 ${num(list.length - cidrs)} 个`); }
+  }
+  if (expand === 0 && cidrs === 0) {
+    console.log(`  （--expand N 展开 /24，--cidrs N 列出 CIDR）`);
   }
 }

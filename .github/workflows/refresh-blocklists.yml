@@ -1,0 +1,57 @@
+# 每天刷新风险名单层：Spamhaus DROP + IPsum + Tor exit + blocklist.de
+#   → data/blocklists.bin / data/blocklists.js（只标注，不改级别与得分）
+#
+# 这个包用包内版本号（meta.generated）做缓存键，所以**不动构建戳**：
+# index.html 的 ?v= 与 sw.js 的 CACHE 都不变，33 MB 城市片的 CDN 缓存不受影响。
+# 只有指纹真的变了才提交（见 tools/refresh-data.mjs）。
+
+name: refresh blocklists
+
+on:
+  schedule:
+    - cron: "43 4 * * *"          # 每天 04:43 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 拉四份名单 → 合并区间 → 打包
+        id: refresh
+        run: node tools/refresh-data.mjs --blocklists
+
+      - name: 数据自检（测试全绿才提交）
+        if: steps.refresh.outputs.changed == 'true'
+        run: node test/run-all.mjs
+
+      - name: 提交并推送
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          git config user.name "ipurity-bot"
+          git config user.email "ipurity-bot@users.noreply.github.com"
+          git add -A data
+          git commit -m "data: 刷新风险名单（DROP/IPsum/Tor/blocklist.de）"
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || exit 1
+            if git push; then pushed=1; break; fi
+            echo "第 $i 次推送被拒，15 秒后重试"; sleep 15
+          done
+          test -n "$pushed"
+
+      - name: 数据没变化
+        if: steps.refresh.outputs.changed != 'true'
+        run: echo "上游与本仓库内容一致，未提交。" >> "$GITHUB_STEP_SUMMARY"

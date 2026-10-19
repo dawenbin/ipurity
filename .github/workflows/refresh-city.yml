@@ -42,7 +42,7 @@ jobs:
         run: |
           git config user.name "ipurity-bot"
           git config user.email "ipurity-bot@users.noreply.github.com"
-          git add -A data index.html
+          git add -A data index.html sw.js
           git commit -m "data: 刷新城市层（DB-IP City Lite 当月版）"
           # 别人（我自己）刚好也在推 main 时 push 会被拒，先 rebase 再推，最多试 3 次
           for i in 1 2 3; do
