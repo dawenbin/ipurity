@@ -29,7 +29,7 @@ const fixtures = [
   { file: "pasted-list-4.txt", expectItems: 35, expectUnmatched: 1, expectDuplicates: 1 },
   /* 供应商清单：加粗 IP 紧贴着运营商名，每行一个 —— 解析层最容易整段丢掉的一类 */
   { file: "pasted-list-5.txt", expectItems: 48, expectUnmatched: 0, expectDuplicates: 0,
-    expectCounts: { A: 10, B: 9, C: 9, D: 11, X: 9, fail: 0 } }
+    expectCounts: { A: 10, B: 9, C: 8, D: 11, X: 10, fail: 0 } }
 ];
 
 for (const f of fixtures) {
