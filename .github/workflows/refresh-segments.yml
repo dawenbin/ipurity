@@ -9,6 +9,10 @@
 #
 # 只有数据指纹真的变了才提交（见 tools/refresh-data.mjs：产物里的 generated 时间戳先抹掉再比对）。
 # 扫描被限速/断流导致行数不到预期 98% 时脚本直接失败、什么都不提交 —— 宁可少刷新一次。
+#
+# 实测数据一换，test/test-inline.mjs 里 pasted-list-5 的「各级行数冻结」就会动（那是故意留的哨兵）。
+# 这里先跑 UPDATE_EXPECT=1 把它按当月数据重算写回，再跑全套自检 —— 提交里能看见这次哪一级挪了几行；
+# 判定口径或解析层的改动不走这条路，还得自己改数。
 
 name: refresh measured data
 
@@ -39,6 +43,12 @@ jobs:
         id: refresh
         run: node tools/refresh-data.mjs --segments
 
+      - name: 冻结行数跟随当月实测数据
+        if: steps.refresh.outputs.changed == 'true'
+        env:
+          UPDATE_EXPECT: "1"
+        run: node test/test-inline.mjs
+
       - name: 数据自检（测试全绿才提交）
         if: steps.refresh.outputs.changed == 'true'
         run: node test/run-all.mjs
@@ -48,8 +58,8 @@ jobs:
         run: |
           git config user.name "ipurity-bot"
           git config user.email "ipurity-bot@users.noreply.github.com"
-          git add -A data build/prefixmap-all.csv index.html
-          git commit -m "data: 刷新实测记录（ip-api 逐 /24 扫描）"
+          git add -A data build/prefixmap-all.csv test/test-inline.mjs index.html
+          git commit -m "data: 刷新实测记录（ip-api 逐 /24 扫描，含冻结行数同步）"
           # 别人（我自己）刚好也在推 main 时 push 会被拒，先 rebase 再推，最多试 3 次
           for i in 1 2 3; do
             git pull --rebase --autostash origin "$GITHUB_REF_NAME" || exit 1

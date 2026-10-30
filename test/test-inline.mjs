@@ -1,7 +1,15 @@
-/* 用真实粘贴样例验证清洗 + 判定链路（node test/test-inline.mjs） */
-import { readFileSync, existsSync } from "node:fs";
+/* 用真实粘贴样例验证清洗 + 判定链路（node test/test-inline.mjs）
+ *
+ * UPDATE_EXPECT=1 node test/test-inline.mjs —— 把「各级行数冻结」重算一遍写回下面的 fixtures 表。
+ *   只给数据刷新工作流用（refresh-segments.yml）：实测层按月自动换数据，行数会跟着动，
+ *   这时硬失败只会变成每月一次的人工改数。写回之后提交里能看见「这次哪一级挪了几行」，
+ *   判定口径 / 解析层的改动仍然得自己改，别拿这个开关糊过去。 */
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
+const UPDATE_EXPECT = process.env.UPDATE_EXPECT === "1";
+const updates = [];
 
 const Core = require("../assets/core.js");
 const data = JSON.parse(readFileSync(new URL("../data/segments-data.json", import.meta.url), "utf8"));
@@ -62,9 +70,29 @@ for (const f of fixtures) {
     /* 整包冻结各级行数：解析、判定、数据包任一层动了都在这儿现形 */
     const got = { A: res.counts.A, B: res.counts.B, C: res.counts.C, D: res.counts.D, X: res.counts.X, fail: res.counts.fail };
     const want = Object.assign({ A: 0, B: 0, C: 0, D: 0, X: 0, fail: 0 }, f.expectCounts);
-    check(`${f.file} 各级行数冻结`, JSON.stringify(got) === JSON.stringify(want),
-      `期望 ${JSON.stringify(want)} 实得 ${JSON.stringify(got)}`);
+    const same = Object.keys(want).every((k) => want[k] === got[k]);
+    if (!same && UPDATE_EXPECT) {
+      updates.push({ file: f.file, got });
+      console.log(`UPDATE  ${f.file} 各级行数 ${JSON.stringify(want)} → ${JSON.stringify(got)}`);
+    } else {
+      check(`${f.file} 各级行数冻结`, same, `期望 ${JSON.stringify(want)} 实得 ${JSON.stringify(got)}`);
+    }
   }
+}
+
+/* 把新的行数写回本文件（正则按 file 名定位那一条 fixture，别碰别处） */
+if (updates.length) {
+  const self = fileURLToPath(import.meta.url);
+  let src = readFileSync(self, "utf8");
+  for (const u of updates) {
+    const re = new RegExp(
+      `(\\{ file: "${u.file}"[\\s\\S]*?expectCounts: )\\{ A: \\d+, B: \\d+, C: \\d+, D: \\d+, X: \\d+, fail: \\d+ \\}`,
+    );
+    if (!re.test(src)) { console.log(`WARN  ${u.file} 的 expectCounts 没找到，没写回`); continue; }
+    src = src.replace(re, `$1{ A: ${u.got.A}, B: ${u.got.B}, C: ${u.got.C}, D: ${u.got.D}, X: ${u.got.X}, fail: ${u.got.fail} }`);
+  }
+  writeFileSync(self, src);
+  console.log(`\n已把 ${updates.length} 处冻结行数写回 test/test-inline.mjs`);
 }
 
 /* 定向用例 */

@@ -50,6 +50,7 @@ node tools/make-city-packs.mjs    # → data/city/<o1>.bin + index.json
 
 - **顺序不能反**：标定库要用当月的实测 CSV 反推住宅占比，所以实测排在 ASN 之前；四份数据都按 5 号的时间先后排队。
 - **实测层有下限**：ip-api 是逐个 /24 发的请求，限速或断流时脚本只会丢批次（CSV 少行）。少于预期行数的 98% 就直接失败、什么都不提交 —— 宁可不刷新，也不拿半份实测去覆盖标定基准。
+- **冻结行数跟着数据走**：`test/test-inline.mjs` 里 `pasted-list-5.txt` 的各级行数（A/B/C/D/X）是哨兵，数据一换就会动。实测层刷新时先跑 `UPDATE_EXPECT=1 node test/test-inline.mjs` 把它按当月数据重算写回，提交里能看见哪一级挪了几行；判定口径和解析层的改动不走这条路，仍然要自己改数。
 - **只有数据真的变了才提交**：产物里的 `generated` 时间戳每次都变，比对指纹时先把它抹掉；指纹与 HEAD 一致就把工作区还原、连构建戳都不动。否则一次无意义提交会白触发一次静态托管重建，还会把 33 MB 城市数据的 CDN 缓存全部打失效（这些 URL 都带 `?v=<build>`）。
 - **变了才换构建戳**：`tools/bump-build.mjs` 把 `index.html` 的 `meta[name=build]` 与所有 `?v=` 一起换，这套戳同时是页面 / 数据 URL 的缓存戳。
 - **顺序**：刷新 → `node test/run-all.mjs`（不绿就不提交）→ commit + push → 静态托管的 Git 集成自动发布。
