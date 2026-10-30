@@ -1,15 +1,20 @@
-# 每天刷新 ASN 层：iptoasn（每天更新）+ PeeringDB + bad-asn-list
+# 每月刷新 ASN 层：iptoasn（每天更新）+ PeeringDB + bad-asn-list
 #   → data/global-pack.bin / data/global-asn.js → data/asn-calib.js（用已精扫 /24 反推住宅占比）
 #
+# 为什么从「每天」改成「每月」：iptoasn 确实每天更新，但一天下来只有约 0.06% 的 IP 换了归属
+# （2026-10-29 抽样 6 万个 IP 对比前一天的数据包：38 个变了，全是 ASN 换号），而每天一次的代价是
+# 4.3 MB + 3.1 MB 两个新对象进 git、一次 Pages 重建、整站 ?v= 缓存戳换一遍。一月一次够了。
+# 想要当天的数据就手动点 Run（workflow_dispatch），不用等 5 号。
+#
 # 只有数据指纹真的变了才提交（见 tools/refresh-data.mjs：产物里的 generated 时间戳先抹掉再比对），
-# 没变就还原、连构建戳都不动 —— 否则每天白触发一次 Pages 重建，还把城市片的 CDN 缓存打失效。
+# 没变就还原、连构建戳都不动 —— 否则白触发一次 Pages 重建，还把城市片的 CDN 缓存打失效。
 # 提交 push 之后，Cloudflare Pages 的 Git 集成照常自动发布（GITHUB_TOKEN 只限制 Actions 自己的 on:push）。
 
 name: refresh ASN data
 
 on:
   schedule:
-    - cron: "17 3 * * *"          # 每天 03:17 UTC
+    - cron: "17 3 5 * *"          # 每月 5 号 03:17 UTC（排在实测 02:17 之后、城市 04:41 之前）
   workflow_dispatch:
 
 permissions:

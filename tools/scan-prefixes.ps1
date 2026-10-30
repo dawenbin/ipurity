@@ -1,4 +1,4 @@
-﻿<#
+<#
   scan-prefixes.ps1 -- 批量扫描 IP 段的 /24 归属与类型
 
   用法:
@@ -16,6 +16,12 @@ param(
     [int]$SleepMs        = 4300
 )
 $ErrorActionPreference = "Stop"
+
+# 这个脚本既在 Windows 上手工跑，也在 GitHub Actions 的 ubuntu runner 上跑（pwsh），
+# 所以两处系统差异都要让开：临时目录（Linux 上没有 $env:TEMP）和 curl 的可执行名
+# （Windows 上是 curl.exe；Linux 上没有 curl.exe，而 PowerShell 的 curl 别名只在旧版里存在）。
+$tmpFile = Join-Path ([IO.Path]::GetTempPath()) "scan-req.json"
+$curl = if ($env:OS -eq "Windows_NT") { "curl.exe" } else { "curl" }
 
 $rxHost = 'amazon|aws|microsoft|azure|google|digitalocean|digital ocean|linode|akamai|vultr|choopa|constant company|ovh|hetzner|scaleway|oracle|alibaba|aliyun|tencent|huawei|baidu|rackspace|equinix|cogent|hurricane|zayo|gtt|telia|colocrossing|m247|leaseweb|contabo|hostinger|namecheap|unified layer|hostwinds|cloudflare|datacamp|zenlayer|quadranet|psychz|multacom|sharktech|hivelocity|frantech|interserver|packethub|stark industries|serverhub|virmach|ionos|liquidweb|singlehop|godaddy|dreamhost|netcup|ipxo|peg tech|hostpapa|nexcess|hostkey|level 3|level3|verizon business|mci|ntt america|ntt communications|sprint|cellco|lumen|centurylink|department|university|college|school|institute|laborator|research|foundation|bureau|authority|city of|county|government|federal|nasa|dod|usda|administracion'
 $rxIsp  = 'comcast|charter|spectrum|cablevision|optimum|altice|suddenlink|mediacom|wideopenwest|cable one|sparklight|armstrong|rcn|astound|grande|midco|ziply|frontier|centurylink|windstream|kinetic|brightspeed|tds telecom|shentel|hawaiian telcom|altafiber|consolidated communications|fairpoint|at&t internet|at&t u-verse|sbc internet|bellsouth|t-mobile usa|metropcs|boost mobile|google fiber|starlink|spacex|hughes network|viasat|wildblue|rise broadband|sonic telecom|fidium|metronet|wyyerd|purple cow|corbina|bouygues|vimpelcom|interpop|first communications|wholesail|bell canada|telus|videotron|teksavvy|rogers communications|shaw communications'
@@ -40,12 +46,11 @@ foreach ($pre in $prefixes) {
         $body = $chunk | ForEach-Object {
             @{ query = $_; fields = "query,status,country,regionName,city,isp,org,as,hosting,proxy,mobile" }
         } | ConvertTo-Json -Compress
-        $tmp = Join-Path $env:TEMP "scan-req.json"
-        Set-Content -LiteralPath $tmp -Value $body -Encoding ASCII -NoNewline
+        Set-Content -LiteralPath $tmpFile -Value $body -Encoding ASCII -NoNewline
 
         $raw = $null
         for ($try = 1; $try -le 4 -and -not $raw; $try++) {
-            $r = curl.exe -s -m 45 -X POST -H "Content-Type: application/json" --data-binary "@$tmp" "http://ip-api.com/batch"
+            $r = & $curl -s -m 45 -X POST -H "Content-Type: application/json" --data-binary "@$tmpFile" "http://ip-api.com/batch"
             if ($r -and ($r -join "").TrimStart().StartsWith("[")) { $raw = ($r -join "") } else { Start-Sleep -Seconds 10 }
         }
         if ($raw) {

@@ -1,13 +1,15 @@
-# 每天刷新顶栏那个星数：取一次仓库信息 → data/star.json
+# 每月刷新顶栏那个星数：取一次仓库信息 → data/star.json
 #
-# 星数没变就不提交（见 tools/refresh-star.mjs）—— 页面读的是本站自己的文件，
-# 所以这个数字到不了位时页面只留一个图标，不会去调第三方接口。
+# 为什么也按每月：这个数字只在星数真的变了时才提交（见 tools/refresh-star.mjs），但每天跑一次
+# 仍然是一天一条 Actions 记录；星数不是行情，差几天没人看得出来。跟着月度刷新一起跑。
+#
+# 页面读的是本站自己的文件，所以这个数字到不了位时页面只留一个图标，不会去调第三方接口。
 
 name: refresh star count
 
 on:
   schedule:
-    - cron: "41 3 * * *"          # 每天 03:41 UTC，错开另外两个刷新任务
+    - cron: "41 5 5 * *"          # 每月 5 号 05:41 UTC，错开同一天另外三个刷新任务
   workflow_dispatch:
 
 permissions:

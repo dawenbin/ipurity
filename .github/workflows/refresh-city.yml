@@ -3,6 +3,7 @@
 # 为什么不每天跑：这个源 86 MB、产物 33 MB，而它一个月才更新一次；每天跑纯属浪费流量，
 # 而且每次提交都会换构建戳、把 33 MB 城市片的 CDN 缓存全部打失效。
 # 只在指纹变了才提交，理由与 refresh-asn.yml 相同（见 tools/refresh-data.mjs）。
+# 同一天的顺序是实测 02:17 → ASN 03:17 → 城市 04:41 → 星数 05:41，串行（concurrency: refresh-data）。
 
 name: refresh city data
 

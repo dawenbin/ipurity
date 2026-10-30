@@ -20,8 +20,8 @@
 
 ```powershell
 # 实测记录（数据源 ip-api.com 免费接口，100 条/批 + 限速，自动重试）
-pwsh -File tools/scan-prefixes.ps1 -Patterns build/prefixes-all.txt   # → build/prefixmap-all.csv
-pwsh -File tools/make-data.ps1                                        # → data/segments-data.js
+pwsh -File tools/scan-prefixes.ps1 -PatternFile build/prefixes-all.txt   # → build/prefixmap-all.csv
+pwsh -File tools/make-data.ps1 -InputCsv build/prefixmap-all.csv         # → data/segments-data.js
 
 # IP 归属表 + 标定（iptoasn 每日更新）
 node tools/fetch-asn-tables.mjs   # iptoasn / PeeringDB / bad-asn-list → build/asn/
@@ -37,17 +37,24 @@ node tools/make-city-packs.mjs    # → data/city/<o1>.bin + index.json
 
 ## 自动刷新（GitHub Actions）
 
-上游节奏不一样，拆成两个定时任务，都只是薄薄一层调用 `tools/refresh-data.mjs`：
+四层数据都是一个薄层调用 `tools/refresh-data.mjs`，全部按月跑，同一天串行（`concurrency: refresh-data`）：
 
 | workflow | 频率（UTC） | 干什么 |
 | --- | --- | --- |
-| `refresh-asn.yml` | 每天 03:17 | iptoasn + PeeringDB + bad-asn-list → IP 归属表 → 重算标定 |
+| `refresh-segments.yml` | 每月 5 号 02:17 | ip-api 逐 /24 实测 → `build/prefixmap-all.csv` → 实测记录 |
+| `refresh-asn.yml` | 每月 5 号 03:17 | iptoasn + PeeringDB + bad-asn-list → IP 归属表 → 重算标定 |
 | `refresh-city.yml` | 每月 5 号 04:41 | DB-IP City Lite → 220 份城市数据 |
+| `refresh-star.yml` | 每月 5 号 05:41 | 顶栏星数 → `data/star.json` |
 
-- **只有数据真的变了才提交**：产物里的 `generated` 时间戳每次都变，比对指纹时先把它抹掉；指纹与 HEAD 一致就把工作区还原、连构建戳都不动。否则每天一次无意义提交会白触发一次静态托管重建，还会把 33 MB 城市数据的 CDN 缓存全部打失效（这些 URL 都带 `?v=<build>`）。
+**为什么按月而不是按上游节奏**：上游里最快的是 iptoasn（每天），但一天里只有约 0.06% 的 IP 换了归属（2026-10-29 抽样 6 万个 IP 对比前一天的数据包：38 个变了，全是 ASN 换号）。按天跑的成本是每天 4.3 MB + 3.1 MB 两个新对象进 git、每天一次 Pages 重建、整站 `?v=` 缓存戳换一遍 —— 收益和成本不成正比。城市源本来一月一版，实测层是标定基准（不是逐日行情），也跟着按月走。
+
+- **顺序不能反**：标定库要用当月的实测 CSV 反推住宅占比，所以实测排在 ASN 之前；四份数据都按 5 号的时间先后排队。
+- **实测层有下限**：ip-api 是逐个 /24 发的请求，限速或断流时脚本只会丢批次（CSV 少行）。少于预期行数的 98% 就直接失败、什么都不提交 —— 宁可不刷新，也不拿半份实测去覆盖标定基准。
+- **只有数据真的变了才提交**：产物里的 `generated` 时间戳每次都变，比对指纹时先把它抹掉；指纹与 HEAD 一致就把工作区还原、连构建戳都不动。否则一次无意义提交会白触发一次静态托管重建，还会把 33 MB 城市数据的 CDN 缓存全部打失效（这些 URL 都带 `?v=<build>`）。
 - **变了才换构建戳**：`tools/bump-build.mjs` 把 `index.html` 的 `meta[name=build]` 与所有 `?v=` 一起换，这套戳同时是页面 / 数据 URL 的缓存戳。
 - **顺序**：刷新 → `node test/run-all.mjs`（不绿就不提交）→ commit + push → 静态托管的 Git 集成自动发布。
-- 想先看有没有变化（不下载、不改文件）：`node tools/refresh-data.mjs --asn --dry`；手动补跑：Actions 页面点 Run。
+- 想先看有没有变化（不下载、不改文件）：`node tools/refresh-data.mjs --asn --dry`；想看当月有没有新数据再决定跑不跑：`node tools/refresh-data.mjs --segments --dry`。
+- 手动补跑：Actions 页面点 Run。要小样本试跑实测层，用 `SCAN_PATTERNS=build/patterns-new.txt SCAN_CSV=build/tmp/scan.csv node tools/refresh-data.mjs --segments`（Windows 上把 `pwsh` 换成 `powershell` 也行，脚本两边的临时目录和 curl 名字都做了兼容）。
 
 ## 数据包格式
 

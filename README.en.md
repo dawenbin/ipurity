@@ -44,14 +44,16 @@ want the city a single IP sits in, it will not help you.
 
 | Data | Source | Coverage | Refresh |
 | :-- | :-- | :-- | :-- |
-| **Measured records** | ip-api.com free endpoint, one look-up per range | 53 groups, 13,568 ranges | manual |
-| **IP owner table** | iptoasn + PeeringDB + bad-asn-list | 539k entries, every in-use IP | daily |
+| **Measured records** | ip-api.com free endpoint, one look-up per range | 53 groups, 13,568 ranges | monthly (automated) |
+| **IP owner table** | iptoasn + PeeringDB + bad-asn-list | 539k entries, every in-use IP | monthly |
 | **City data** | DB-IP City Lite (CC BY 4.0) | 3.62M entries, 33 MB, loaded file by file as needed | monthly |
 | **Calibration** | residential share per ASN, inferred from the measured records | 291 ASNs | with the IP owner table |
 
-The data files ship with the repository (see `data/`). The scheduled jobs in `.github/workflows/` refresh the
-ASN layer daily and the city layer monthly, and commit only once the upstream data has actually changed and the
-self-checks pass. Manual commands and file formats are in [Data refresh](docs/data-pipeline.md) (Chinese).
+The data files ship with the repository (see `data/`). The scheduled jobs in `.github/workflows/` run on the 5th
+of each month and refresh, in order, the measured records, the ASN layer, the city layer and the star count;
+they commit only once the upstream data has actually changed and the self-checks pass. iptoasn updates daily,
+but only about 0.06% of the IP space changes owner in a day, so a monthly run costs a fraction of the churn.
+Manual commands and file formats are in [Data refresh](docs/data-pipeline.md) (Chinese).
 
 ## Privacy
 

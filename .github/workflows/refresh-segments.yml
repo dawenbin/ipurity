@@ -1,0 +1,63 @@
+# 每月刷新实测记录：ip-api.com 免费批量接口，逐 /24 实测（53 组 × 256 = 13,568 个 /24，约 136 批）
+#   → build/prefixmap-all.csv（原始结果，进仓库）→ data/segments-data.{js,json}（页面直接用）
+#
+# 为什么这一层也自动化了：以前是手工跑，13,568 次探测 ≈ 12 分钟，一个月不跑，标定库就一直在用
+# 旧快照 —— 上游 ip-api 的 hosting / proxy 标记会变，ISP 也会把自己的段转租给机房。
+# 为什么每月一次：实测记录是「标定基准」，不是逐日行情；每天重扫只会把扫描噪声也固化成基准。
+# 为什么排在前面：ASN 层的标定（data/asn-calib.js）要拿这份 CSV 反推住宅占比，
+# 所以 02:17 → 03:17 → 04:41 的顺序不能反。
+#
+# 只有数据指纹真的变了才提交（见 tools/refresh-data.mjs：产物里的 generated 时间戳先抹掉再比对）。
+# 扫描被限速/断流导致行数不到预期 98% 时脚本直接失败、什么都不提交 —— 宁可少刷新一次。
+
+name: refresh measured data
+
+on:
+  schedule:
+    - cron: "17 2 5 * *"          # 每月 5 号 02:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-data
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: 逐 /24 实测 → 打包实测层
+        id: refresh
+        run: node tools/refresh-data.mjs --segments
+
+      - name: 数据自检（测试全绿才提交）
+        if: steps.refresh.outputs.changed == 'true'
+        run: node test/run-all.mjs
+
+      - name: 提交并推送
+        if: steps.refresh.outputs.changed == 'true'
+        run: |
+          git config user.name "ipurity-bot"
+          git config user.email "ipurity-bot@users.noreply.github.com"
+          git add -A data build/prefixmap-all.csv index.html
+          git commit -m "data: 刷新实测记录（ip-api 逐 /24 扫描）"
+          # 别人（我自己）刚好也在推 main 时 push 会被拒，先 rebase 再推，最多试 3 次
+          for i in 1 2 3; do
+            git pull --rebase --autostash origin "$GITHUB_REF_NAME" || exit 1
+            if git push; then pushed=1; break; fi
+            echo "第 $i 次推送被拒，15 秒后重试"; sleep 15
+          done
+          test -n "$pushed"
+
+      - name: 数据没变化
+        if: steps.refresh.outputs.changed != 'true'
+        run: echo "上游与本仓库内容一致，未提交。" >> "$GITHUB_STEP_SUMMARY"
